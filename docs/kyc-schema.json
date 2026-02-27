@@ -1,0 +1,389 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Canadian KYC Record",
+  "description": "Structured KYC data collected through conversational onboarding, aligned with FINTRAC and CSA requirements for Canadian investment accounts.",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Record metadata for audit trail",
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "description": "Unique identifier for this KYC record"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the record was created"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last update"
+        },
+        "conversation_id": {
+          "type": "string",
+          "description": "Links this record to the conversation transcript"
+        },
+        "agent_version": {
+          "type": "string",
+          "description": "Version of the AI agent that conducted onboarding"
+        },
+        "completion_status": {
+          "type": "string",
+          "enum": ["in_progress", "complete", "escalated", "abandoned"],
+          "description": "Current status of the KYC collection process"
+        },
+        "escalation_flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "flag_type": {
+                "type": "string",
+                "enum": [
+                  "pep_detected",
+                  "contradictory_information",
+                  "high_risk_jurisdiction",
+                  "unusual_source_of_funds",
+                  "non_resident_tax_complexity",
+                  "suitability_mismatch",
+                  "incomplete_information",
+                  "sanctions_screening_required",
+                  "age_eligibility_concern"
+                ]
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable explanation of the flag"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "critical"]
+              },
+              "triggered_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": ["flag_type", "description", "severity", "triggered_at"]
+          },
+          "description": "Flags that require human reviewer attention"
+        }
+      },
+      "required": ["record_id", "created_at", "conversation_id", "completion_status"]
+    },
+    "personal_information": {
+      "type": "object",
+      "description": "Core identity information required by FINTRAC",
+      "properties": {
+        "legal_first_name": {
+          "type": "string",
+          "description": "Legal first name as it appears on government-issued ID"
+        },
+        "legal_last_name": {
+          "type": "string",
+          "description": "Legal last name as it appears on government-issued ID"
+        },
+        "date_of_birth": {
+          "type": "string",
+          "format": "date",
+          "description": "Date of birth (YYYY-MM-DD). Must be 18+ for account opening."
+        },
+        "residential_address": {
+          "type": "object",
+          "properties": {
+            "street_address": { "type": "string" },
+            "city": { "type": "string" },
+            "province_territory": {
+              "type": "string",
+              "enum": ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"]
+            },
+            "postal_code": {
+              "type": "string",
+              "pattern": "^[A-Za-z]\\d[A-Za-z]\\s?\\d[A-Za-z]\\d$"
+            },
+            "country": {
+              "type": "string",
+              "default": "CA"
+            }
+          },
+          "required": ["street_address", "city", "province_territory", "postal_code", "country"]
+        },
+        "phone_number": {
+          "type": "string",
+          "description": "Primary contact phone number"
+        },
+        "email_address": {
+          "type": "string",
+          "format": "email"
+        },
+        "social_insurance_number": {
+          "type": "string",
+          "description": "Canadian SIN. Required for tax-registered accounts (TFSA, RRSP, FHSA, RESP). Collected but stored encrypted."
+        },
+        "sin_provided": {
+          "type": "boolean",
+          "description": "Whether the user agreed to provide their SIN. If false, limits account types."
+        }
+      },
+      "required": ["legal_first_name", "legal_last_name", "date_of_birth", "residential_address"]
+    },
+    "citizenship_and_tax_residency": {
+      "type": "object",
+      "description": "Citizenship and tax residency status — critical for account eligibility and CRS/FATCA reporting",
+      "properties": {
+        "canadian_citizen": {
+          "type": "boolean",
+          "description": "Whether the individual is a Canadian citizen"
+        },
+        "canadian_tax_resident": {
+          "type": "boolean",
+          "description": "Whether the individual is a Canadian tax resident. Required for TFSA, RRSP, FHSA eligibility."
+        },
+        "us_person": {
+          "type": "boolean",
+          "description": "US citizen or green card holder — triggers FATCA reporting obligations"
+        },
+        "other_tax_residencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "country": { "type": "string" },
+              "tax_identification_number": { "type": "string" }
+            },
+            "required": ["country"]
+          },
+          "description": "Additional tax residencies for CRS reporting"
+        }
+      },
+      "required": ["canadian_citizen", "canadian_tax_resident", "us_person"]
+    },
+    "employment_and_income": {
+      "type": "object",
+      "description": "Employment status and income information for suitability assessment and source of funds",
+      "properties": {
+        "employment_status": {
+          "type": "string",
+          "enum": ["employed", "self_employed", "retired", "student", "unemployed", "homemaker"],
+          "description": "Current employment status"
+        },
+        "employer_name": {
+          "type": "string",
+          "description": "Name of employer (if employed)"
+        },
+        "job_title": {
+          "type": "string",
+          "description": "Current job title or occupation"
+        },
+        "industry": {
+          "type": "string",
+          "description": "Industry sector of employment"
+        },
+        "annual_income_range": {
+          "type": "string",
+          "enum": [
+            "under_25k",
+            "25k_to_50k",
+            "50k_to_75k",
+            "75k_to_100k",
+            "100k_to_150k",
+            "150k_to_250k",
+            "250k_to_500k",
+            "over_500k"
+          ],
+          "description": "Annual gross income range in CAD"
+        },
+        "is_insider_or_control_person": {
+          "type": "boolean",
+          "description": "Whether the individual is an insider or control person of a publicly traded company (10%+ ownership or director/officer). Required under securities regulations."
+        },
+        "insider_company_name": {
+          "type": "string",
+          "description": "Name of the company if insider status is true"
+        }
+      },
+      "required": ["employment_status", "annual_income_range"]
+    },
+    "financial_profile": {
+      "type": "object",
+      "description": "Financial situation for suitability assessment",
+      "properties": {
+        "net_worth_range": {
+          "type": "string",
+          "enum": [
+            "under_25k",
+            "25k_to_100k",
+            "100k_to_250k",
+            "250k_to_500k",
+            "500k_to_1m",
+            "1m_to_5m",
+            "over_5m"
+          ],
+          "description": "Total net worth range in CAD (assets minus liabilities)"
+        },
+        "liquid_assets_range": {
+          "type": "string",
+          "enum": [
+            "under_10k",
+            "10k_to_50k",
+            "50k_to_100k",
+            "100k_to_250k",
+            "250k_to_500k",
+            "over_500k"
+          ],
+          "description": "Liquid assets available for investment in CAD"
+        },
+        "fixed_monthly_expenses": {
+          "type": "string",
+          "enum": [
+            "under_2k",
+            "2k_to_4k",
+            "4k_to_6k",
+            "6k_to_10k",
+            "over_10k"
+          ],
+          "description": "Approximate fixed monthly expenses in CAD"
+        },
+        "outstanding_debt": {
+          "type": "boolean",
+          "description": "Whether the individual has significant outstanding debt"
+        },
+        "debt_details": {
+          "type": "string",
+          "description": "Nature of outstanding debt if applicable (mortgage, student loans, credit card, etc.)"
+        }
+      },
+      "required": ["net_worth_range", "liquid_assets_range"]
+    },
+    "source_of_funds": {
+      "type": "object",
+      "description": "Source of funds and wealth — required by FINTRAC for AML compliance",
+      "properties": {
+        "primary_funding_source": {
+          "type": "string",
+          "enum": [
+            "employment_income",
+            "business_income",
+            "investments",
+            "inheritance",
+            "gift",
+            "pension",
+            "government_benefits",
+            "savings",
+            "sale_of_property",
+            "other"
+          ],
+          "description": "Primary source of funds for the account"
+        },
+        "funding_source_details": {
+          "type": "string",
+          "description": "Additional context on the source of funds, especially for inheritance, gift, or other"
+        },
+        "initial_deposit_range": {
+          "type": "string",
+          "enum": [
+            "under_1k",
+            "1k_to_5k",
+            "5k_to_25k",
+            "25k_to_100k",
+            "100k_to_500k",
+            "over_500k"
+          ],
+          "description": "Expected initial deposit amount range in CAD"
+        },
+        "expected_annual_deposits": {
+          "type": "string",
+          "enum": [
+            "under_5k",
+            "5k_to_25k",
+            "25k_to_50k",
+            "50k_to_100k",
+            "over_100k"
+          ],
+          "description": "Expected annual deposit activity in CAD"
+        }
+      },
+      "required": ["primary_funding_source", "initial_deposit_range"]
+    },
+    "pep_and_sanctions": {
+      "type": "object",
+      "description": "Politically Exposed Person status and sanctions screening — FINTRAC requirement",
+      "properties": {
+        "is_pep": {
+          "type": "boolean",
+          "description": "Whether the individual is a Politically Exposed Person (current or former)"
+        },
+        "pep_type": {
+          "type": "string",
+          "enum": ["domestic", "foreign", "head_of_international_org", "family_member", "close_associate", "not_applicable"],
+          "description": "Type of PEP classification"
+        },
+        "pep_position_details": {
+          "type": "string",
+          "description": "Details of the political position if PEP"
+        },
+        "is_family_of_pep": {
+          "type": "boolean",
+          "description": "Whether the individual is a family member of a PEP"
+        },
+        "is_close_associate_of_pep": {
+          "type": "boolean",
+          "description": "Whether the individual is a close associate of a PEP"
+        }
+      },
+      "required": ["is_pep"]
+    },
+    "purpose_and_activity": {
+      "type": "object",
+      "description": "Purpose of the account and expected activity patterns",
+      "properties": {
+        "account_purpose": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "retirement_savings",
+              "general_investing",
+              "first_home_savings",
+              "education_savings",
+              "emergency_fund",
+              "tax_optimization",
+              "active_trading",
+              "income_generation",
+              "wealth_preservation"
+            ]
+          },
+          "description": "Primary purposes for opening the account"
+        },
+        "investment_time_horizon": {
+          "type": "string",
+          "enum": ["under_1_year", "1_to_3_years", "3_to_5_years", "5_to_10_years", "over_10_years"],
+          "description": "Expected time horizon for the investment"
+        },
+        "expected_trading_frequency": {
+          "type": "string",
+          "enum": ["rarely", "monthly", "weekly", "daily"],
+          "description": "How frequently the user expects to trade"
+        },
+        "third_party_involvement": {
+          "type": "boolean",
+          "description": "Whether a third party will direct trading or have authority over the account"
+        }
+      },
+      "required": ["account_purpose", "investment_time_horizon"]
+    }
+  },
+  "required": [
+    "metadata",
+    "personal_information",
+    "citizenship_and_tax_residency",
+    "employment_and_income",
+    "financial_profile",
+    "source_of_funds",
+    "pep_and_sanctions",
+    "purpose_and_activity"
+  ]
+}

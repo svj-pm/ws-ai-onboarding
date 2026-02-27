@@ -1,0 +1,256 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Account Routing Rules",
+  "description": "Decision logic for recommending Wealthsimple account types based on KYC and suitability data. The AI agent uses these rules to make recommendations, but always presents the rationale to the user for approval.",
+  "account_types": {
+    "tfsa": {
+      "full_name": "Tax-Free Savings Account",
+      "description": "Investment growth and withdrawals are completely tax-free. The most flexible registered account.",
+      "eligibility_rules": {
+        "minimum_age": 18,
+        "requires_sin": true,
+        "requires_canadian_tax_resident": true,
+        "requires_canadian_citizen_or_pr": false,
+        "notes": "Must be a Canadian tax resident with a valid SIN. Contribution room accumulates from age 18 (or 2009, whichever is later)."
+      },
+      "contribution_limits": {
+        "annual_limit_2024": 7000,
+        "annual_limit_2025": 7000,
+        "cumulative_since_2009": "Varies by year of eligibility. Lifetime room for someone eligible since 2009 is $95,000 as of 2024.",
+        "over_contribution_penalty": "1% per month on excess amount",
+        "notes": "Unused room carries forward. Withdrawals restore room the following calendar year."
+      },
+      "recommended_when": [
+        "User is a Canadian tax resident under 70 with available contribution room",
+        "User has general savings or investment goals",
+        "User wants flexibility to withdraw without tax consequences",
+        "User is building an emergency fund in a tax-advantaged wrapper",
+        "User is young and in a low tax bracket (TFSA often beats RRSP at low income)"
+      ],
+      "not_recommended_when": [
+        "User is not a Canadian tax resident",
+        "User cannot provide SIN",
+        "User has already maxed out TFSA contribution room and primary goal is tax optimization"
+      ],
+      "priority_score_factors": {
+        "base_priority": 80,
+        "boost_if_low_income": 15,
+        "boost_if_flexible_goals": 10,
+        "boost_if_first_time_investor": 10,
+        "reduce_if_high_income_and_rrsp_room": -20
+      }
+    },
+    "rrsp": {
+      "full_name": "Registered Retirement Savings Plan",
+      "description": "Contributions are tax-deductible now, but withdrawals are taxed as income in retirement. Best when you expect to be in a lower tax bracket in retirement.",
+      "eligibility_rules": {
+        "minimum_age": 18,
+        "maximum_age": 71,
+        "requires_sin": true,
+        "requires_canadian_tax_resident": true,
+        "requires_earned_income_history": true,
+        "notes": "Contribution room is 18% of prior year earned income, up to the annual maximum. Must convert to RRIF by end of year turning 71."
+      },
+      "contribution_limits": {
+        "annual_limit_2024": 31560,
+        "annual_limit_2025": 32490,
+        "calculation": "18% of prior year earned income, up to annual max, minus pension adjustments",
+        "over_contribution_penalty": "1% per month on excess above $2,000 lifetime over-contribution buffer",
+        "notes": "Unused room carries forward indefinitely."
+      },
+      "recommended_when": [
+        "User has employment income and is in a moderate-to-high tax bracket (above ~$55,000 CAD)",
+        "User's primary goal is retirement savings",
+        "User expects to be in a lower tax bracket in retirement",
+        "User wants to use the Home Buyers' Plan (up to $60,000 withdrawal for first home)",
+        "User wants to use the Lifelong Learning Plan"
+      ],
+      "not_recommended_when": [
+        "User is in a low tax bracket (under ~$55,000) — TFSA is usually better",
+        "User needs liquidity (RRSP withdrawals are taxed and room is permanently lost)",
+        "User is over 71",
+        "User has no earned income history (no contribution room)"
+      ],
+      "priority_score_factors": {
+        "base_priority": 60,
+        "boost_if_high_income": 25,
+        "boost_if_retirement_goal": 20,
+        "boost_if_employer_match": 30,
+        "reduce_if_low_income": -25,
+        "reduce_if_needs_liquidity": -20
+      }
+    },
+    "fhsa": {
+      "full_name": "First Home Savings Account",
+      "description": "Combines RRSP and TFSA benefits: contributions are tax-deductible AND qualifying withdrawals for a first home are tax-free.",
+      "eligibility_rules": {
+        "minimum_age": 18,
+        "maximum_age": 71,
+        "requires_sin": true,
+        "requires_canadian_tax_resident": true,
+        "requires_first_time_home_buyer": true,
+        "first_time_buyer_definition": "Has not owned a home in which they lived at any time in the year the account is opened or any of the four preceding calendar years",
+        "notes": "Account must be closed by Dec 31 of the year of the 15th anniversary of opening, or the year turning 71, whichever is earlier. Can transfer to RRSP if not used for home purchase."
+      },
+      "contribution_limits": {
+        "annual_limit": 8000,
+        "lifetime_limit": 40000,
+        "carry_forward_max": 8000,
+        "notes": "Unused contribution room carries forward (max $8,000). Cannot carry forward room from before the account is opened."
+      },
+      "recommended_when": [
+        "User is a first-time home buyer (by the FHSA definition)",
+        "User mentions buying a first home as a goal",
+        "User is under 40 and hasn't mentioned owning a home",
+        "User is in a moderate-to-high tax bracket (gets deduction benefit)"
+      ],
+      "not_recommended_when": [
+        "User already owns or has recently owned a home",
+        "User has no interest in home ownership",
+        "User is over 71"
+      ],
+      "priority_score_factors": {
+        "base_priority": 0,
+        "boost_if_first_home_goal": 90,
+        "boost_if_never_owned_home": 40,
+        "reduce_if_owns_home": -100,
+        "reduce_if_no_home_interest": -50
+      }
+    },
+    "resp": {
+      "full_name": "Registered Education Savings Plan",
+      "description": "Tax-sheltered savings for a child's post-secondary education. Government matches contributions through the Canada Education Savings Grant (CESG).",
+      "eligibility_rules": {
+        "requires_sin_of_beneficiary": true,
+        "beneficiary_must_be_under_31_for_contributions": true,
+        "requires_canadian_resident_beneficiary": true,
+        "notes": "Subscriber (contributor) can be anyone. Beneficiary must be Canadian resident with SIN."
+      },
+      "contribution_limits": {
+        "lifetime_limit_per_beneficiary": 50000,
+        "no_annual_limit": true,
+        "cesg_match_rate": "20% on first $2,500 per year (up to $500/year CESG)",
+        "cesg_lifetime_max": 7200,
+        "notes": "No annual contribution limit, but CESG only matches first $2,500/year. Can carry forward CESG room."
+      },
+      "recommended_when": [
+        "User mentions children or education savings as a goal",
+        "User has children under 18",
+        "User wants to take advantage of the CESG government match"
+      ],
+      "not_recommended_when": [
+        "User has no children and no education savings goal",
+        "Never proactively suggest unless user mentions children or education"
+      ],
+      "priority_score_factors": {
+        "base_priority": 0,
+        "boost_if_education_goal": 85,
+        "boost_if_has_children": 50,
+        "reduce_if_no_children": -100
+      }
+    },
+    "non_registered": {
+      "full_name": "Non-Registered Investment Account",
+      "description": "A standard taxable investment account with no contribution limits or withdrawal restrictions. Capital gains and dividends are taxable.",
+      "eligibility_rules": {
+        "minimum_age": 18,
+        "requires_sin": false,
+        "requires_canadian_tax_resident": false,
+        "notes": "Available to any adult. No registration requirements. SIN is still requested for tax reporting."
+      },
+      "contribution_limits": {
+        "no_limit": true,
+        "notes": "No contribution or withdrawal limits."
+      },
+      "recommended_when": [
+        "User has maxed out registered account room (TFSA, RRSP, FHSA)",
+        "User wants to invest more than registered limits allow",
+        "User is not eligible for registered accounts (non-resident, etc.)",
+        "User wants maximum flexibility with no withdrawal restrictions",
+        "User wants to actively trade or use margin",
+        "User has corporate or business income to invest"
+      ],
+      "not_recommended_when": [
+        "User has unused registered account room (always prioritize tax-advantaged accounts first)",
+        "User is a first-time investor with small amounts (TFSA is simpler)"
+      ],
+      "priority_score_factors": {
+        "base_priority": 30,
+        "boost_if_registered_maxed": 50,
+        "boost_if_active_trading": 30,
+        "boost_if_non_resident": 60,
+        "reduce_if_has_registered_room": -30
+      }
+    },
+    "corporate": {
+      "full_name": "Corporate Investment Account",
+      "description": "Investment account for incorporated businesses. Allows companies to invest retained earnings.",
+      "eligibility_rules": {
+        "requires_incorporation": true,
+        "notes": "Only available to incorporated businesses (not sole proprietorships)."
+      },
+      "recommended_when": [
+        "User mentions being incorporated or having a corporation",
+        "User has retained earnings in a business they want to invest"
+      ],
+      "not_recommended_when": [
+        "User is an individual investor",
+        "User is self-employed but not incorporated"
+      ],
+      "priority_score_factors": {
+        "base_priority": 0,
+        "boost_if_incorporated": 80,
+        "reduce_if_individual": -100
+      }
+    }
+  },
+  "routing_logic": {
+    "description": "The AI agent follows this priority order when recommending accounts. Multiple accounts can and should be recommended when appropriate.",
+    "step_1": "Check eligibility: Filter out any accounts the user is not eligible for based on age, residency, SIN availability, home ownership, etc.",
+    "step_2": "Score remaining accounts: Apply priority_score_factors based on the user's profile from KYC and suitability data.",
+    "step_3": "Rank by composite score: Present top 1-3 accounts in priority order.",
+    "step_4": "Explain the recommendation: For each recommended account, explain WHY it suits this specific user. Reference their goals, income, and situation.",
+    "step_5": "Flag any concerns: If the user's profile triggers any suitability warnings, note them in the recommendation.",
+    "step_6": "Present for approval: Always present the recommendation to the user and ask for explicit approval before proceeding.",
+    "multi_account_guidance": {
+      "common_combinations": [
+        "TFSA + RRSP (most common for employed Canadians with moderate-to-high income)",
+        "TFSA + FHSA (first-time home buyers)",
+        "TFSA + RRSP + FHSA (high income first-time home buyers)",
+        "TFSA + RRSP + RESP (parents with retirement and education goals)",
+        "TFSA + Non-Registered (maxed TFSA, not enough income for RRSP benefit)"
+      ],
+      "priority_order_general": "FHSA (if eligible) → TFSA (almost always) → RRSP (if income warrants) → RESP (if children) → Non-Registered (overflow)"
+    }
+  },
+  "portfolio_routing": {
+    "description": "Once account type is determined, recommend a portfolio approach based on suitability",
+    "rules": [
+      {
+        "condition": "knowledge_level = none OR beginner AND risk_tolerance = conservative OR moderate",
+        "recommendation": "managed_conservative or managed_balanced",
+        "rationale": "New investors with lower risk tolerance benefit from hands-off managed portfolios"
+      },
+      {
+        "condition": "knowledge_level = intermediate AND risk_tolerance = balanced OR growth",
+        "recommendation": "managed_balanced or managed_growth",
+        "rationale": "Moderate knowledge investors can handle growth-oriented managed portfolios"
+      },
+      {
+        "condition": "knowledge_level = advanced OR expert AND wants active management",
+        "recommendation": "self_directed",
+        "rationale": "Experienced investors who want control should self-direct"
+      },
+      {
+        "condition": "high_income AND long_time_horizon AND large_portfolio (250k+)",
+        "recommendation": "direct_indexing",
+        "rationale": "Tax-loss harvesting through direct indexing benefits high-income, long-horizon investors with sufficient assets"
+      },
+      {
+        "condition": "knowledge_level = none OR beginner AND wants active_trading OR options",
+        "recommendation": "BLOCK — escalate to human",
+        "rationale": "Suitability mismatch: inexperienced investors should not be routed to active trading or options without human advisor conversation"
+      }
+    ]
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Investment Suitability Assessment",
+  "description": "Suitability assessment framework aligned with CSA National Instrument 31-103 (Know Your Client and Know Your Product obligations) for Canadian investment accounts. The AI agent populates this progressively during conversation.",
+  "type": "object",
+  "properties": {
+    "risk_profile": {
+      "type": "object",
+      "description": "Composite risk profile derived from multiple conversation signals — not a single question",
+      "properties": {
+        "stated_risk_tolerance": {
+          "type": "string",
+          "enum": ["conservative", "moderate", "balanced", "growth", "aggressive"],
+          "description": "What the user says their risk tolerance is"
+        },
+        "behavioral_risk_signals": {
+          "type": "object",
+          "description": "Risk signals inferred from how the user talks about money, loss, and goals",
+          "properties": {
+            "loss_reaction": {
+              "type": "string",
+              "enum": ["would_sell_immediately", "would_be_concerned", "would_hold", "would_buy_more"],
+              "description": "How the user describes their likely reaction to a 20% portfolio decline"
+            },
+            "time_pressure_language": {
+              "type": "boolean",
+              "description": "Whether the user uses urgent language about needing returns quickly"
+            },
+            "safety_first_language": {
+              "type": "boolean",
+              "description": "Whether the user emphasizes not losing money over growing it"
+            },
+            "experience_with_volatility": {
+              "type": "boolean",
+              "description": "Whether the user has experienced significant market downturns and held through them"
+            }
+          }
+        },
+        "assessed_risk_tolerance": {
+          "type": "string",
+          "enum": ["conservative", "moderate", "balanced", "growth", "aggressive"],
+          "description": "AI-assessed risk tolerance based on all signals. May differ from stated tolerance."
+        },
+        "risk_mismatch_detected": {
+          "type": "boolean",
+          "description": "True if stated risk tolerance conflicts with behavioral signals. Triggers human escalation flag."
+        },
+        "risk_mismatch_explanation": {
+          "type": "string",
+          "description": "If mismatch detected, explains the contradiction for human reviewer"
+        }
+      },
+      "required": ["stated_risk_tolerance", "assessed_risk_tolerance", "risk_mismatch_detected"]
+    },
+    "investment_knowledge": {
+      "type": "object",
+      "description": "Assessment of the user's investment knowledge and experience",
+      "properties": {
+        "self_assessed_level": {
+          "type": "string",
+          "enum": ["none", "beginner", "intermediate", "advanced", "expert"],
+          "description": "How the user describes their investment knowledge"
+        },
+        "demonstrated_knowledge_signals": {
+          "type": "object",
+          "description": "Knowledge signals inferred from conversation",
+          "properties": {
+            "understands_diversification": { "type": "boolean" },
+            "understands_compound_growth": { "type": "boolean" },
+            "understands_registered_accounts": { "type": "boolean" },
+            "understands_risk_return_tradeoff": { "type": "boolean" },
+            "uses_financial_terminology": { "type": "boolean" },
+            "has_prior_investment_experience": { "type": "boolean" },
+            "prior_investment_types": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["savings_accounts", "gics", "mutual_funds", "etfs", "individual_stocks", "options", "crypto", "real_estate", "other"]
+              }
+            }
+          }
+        },
+        "assessed_knowledge_level": {
+          "type": "string",
+          "enum": ["none", "beginner", "intermediate", "advanced", "expert"],
+          "description": "AI-assessed knowledge level based on conversation signals"
+        },
+        "knowledge_gaps_identified": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific knowledge gaps the AI identified during conversation that are relevant to the recommended account/product"
+        }
+      },
+      "required": ["self_assessed_level", "assessed_knowledge_level"]
+    },
+    "investment_objectives": {
+      "type": "object",
+      "description": "What the user is actually trying to accomplish with their money",
+      "properties": {
+        "primary_objective": {
+          "type": "string",
+          "enum": [
+            "capital_preservation",
+            "income_generation",
+            "balanced_growth_and_income",
+            "long_term_growth",
+            "aggressive_growth",
+            "speculation"
+          ],
+          "description": "Primary investment objective"
+        },
+        "specific_goals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "goal_type": {
+                "type": "string",
+                "enum": [
+                  "buy_first_home",
+                  "retirement",
+                  "education_savings",
+                  "emergency_fund",
+                  "major_purchase",
+                  "wealth_building",
+                  "debt_payoff",
+                  "income_replacement",
+                  "other"
+                ]
+              },
+              "target_amount": {
+                "type": "string",
+                "description": "Target amount if mentioned (approximate, in CAD)"
+              },
+              "target_date": {
+                "type": "string",
+                "description": "Target date or timeframe if mentioned"
+              },
+              "priority": {
+                "type": "string",
+                "enum": ["primary", "secondary", "aspirational"]
+              }
+            },
+            "required": ["goal_type", "priority"]
+          },
+          "description": "Specific financial goals extracted from conversation"
+        },
+        "time_horizon": {
+          "type": "string",
+          "enum": ["under_1_year", "1_to_3_years", "3_to_5_years", "5_to_10_years", "over_10_years"],
+          "description": "Overall investment time horizon"
+        },
+        "liquidity_needs": {
+          "type": "string",
+          "enum": ["high", "moderate", "low"],
+          "description": "How likely the user is to need access to the invested funds"
+        }
+      },
+      "required": ["primary_objective", "time_horizon", "liquidity_needs"]
+    },
+    "suitability_determination": {
+      "type": "object",
+      "description": "The AI's overall suitability determination, synthesizing all inputs",
+      "properties": {
+        "suitable_account_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["tfsa", "rrsp", "fhsa", "resp", "non_registered", "corporate"]
+          },
+          "description": "Account types that are suitable based on the user's profile"
+        },
+        "recommended_portfolio_approach": {
+          "type": "string",
+          "enum": ["managed_conservative", "managed_balanced", "managed_growth", "managed_aggressive", "self_directed", "direct_indexing"],
+          "description": "Recommended portfolio management approach"
+        },
+        "recommended_asset_allocation": {
+          "type": "object",
+          "properties": {
+            "equities_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "fixed_income_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "alternatives_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+          },
+          "description": "Suggested asset allocation percentages"
+        },
+        "suitability_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Confidence score for the suitability determination (0-100). Below 60 triggers human review."
+        },
+        "suitability_rationale": {
+          "type": "string",
+          "description": "Plain-language explanation of why this recommendation suits the user. Shown to the user and the human reviewer."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "warning_type": {
+                "type": "string",
+                "enum": [
+                  "risk_tolerance_mismatch",
+                  "knowledge_gap_for_product",
+                  "short_horizon_with_equity_heavy",
+                  "concentrated_position_risk",
+                  "over_contribution_risk",
+                  "liquidity_mismatch",
+                  "affordability_concern",
+                  "speculation_with_low_knowledge"
+                ]
+              },
+              "description": { "type": "string" },
+              "severity": {
+                "type": "string",
+                "enum": ["info", "caution", "warning", "block"]
+              },
+              "action_taken": {
+                "type": "string",
+                "enum": ["informed_user", "adjusted_recommendation", "escalated_to_human", "blocked_account_opening"],
+                "description": "What the AI did in response to this warning"
+              }
+            },
+            "required": ["warning_type", "description", "severity", "action_taken"]
+          }
+        }
+      },
+      "required": ["suitable_account_types", "recommended_portfolio_approach", "suitability_score", "suitability_rationale"]
+    }
+  },
+  "required": ["risk_profile", "investment_knowledge", "investment_objectives", "suitability_determination"]
+}
