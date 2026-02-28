@@ -125,7 +125,8 @@ CRITICAL: The extraction block must be the VERY LAST thing in your response. No 
 const EXTRACTION_REMINDER =
   '\n\n[REQUIRED: End your response with an <extraction> block. ' +
   'Extract any fields learned in this exchange as dot-notation JSON. ' +
-  'If nothing new: <extraction>{"escalation_flags":[]}</extraction>]';
+  'If nothing new: <extraction>{"escalation_flags":[]}</extraction>. ' +
+  'Remember: ask only ONE question in your response.]';
 
 const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + EXTRACTION_INSTRUCTIONS;
 
@@ -302,6 +303,54 @@ function parseClaudeResponse(rawText: string): {
   }
 }
 
+// ─── One-Question Guardrail ───────────────────────────────────────────────────
+
+/**
+ * Hard programmatic filter: ensures the assistant asks at most one question per
+ * response.  Finds the first "real" question mark — one that is NOT inside a
+ * double-quoted string or a parenthetical aside — and drops everything that
+ * follows it.
+ *
+ * Edge cases:
+ *   - Zero questions → return text unchanged.
+ *   - "?" inside "quoted speech" → skipped (ASCII " and smart quotes " ").
+ *   - "?" inside (parenthetical asides) → skipped.
+ *   - Paragraph breaks before the question sentence are preserved.
+ */
+export function enforceOneQuestion(text: string): string {
+  let inDoubleQuote = false;
+  let parenDepth = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    // Track double-quote state (ASCII " and smart-quote pairs " ")
+    if (ch === '"') {
+      inDoubleQuote = !inDoubleQuote;
+    } else if (ch === '\u201C') { // left smart double-quote "
+      inDoubleQuote = true;
+    } else if (ch === '\u201D') { // right smart double-quote "
+      inDoubleQuote = false;
+    } else if (ch === '(' && !inDoubleQuote) {
+      parenDepth++;
+    } else if (ch === ')' && !inDoubleQuote) {
+      parenDepth = Math.max(0, parenDepth - 1);
+    } else if (ch === '?' && !inDoubleQuote && parenDepth === 0) {
+      // First real question mark found. Consume it plus any immediately
+      // following closing delimiters (e.g. ?" or ?") that are part of
+      // the same sentence boundary.
+      let cut = i + 1;
+      while (cut < text.length && '")\u201D'.includes(text[cut])) {
+        cut++;
+      }
+      return text.slice(0, cut).trim();
+    }
+  }
+
+  // No real question mark found — return unchanged.
+  return text;
+}
+
 // ─── Record Update ────────────────────────────────────────────────────────────
 
 export function applyExtraction(
@@ -439,6 +488,16 @@ export async function chat(
       }
     }
   }
+
+  // ── One-question guardrail ────────────────────────────────────────────────
+  // Applied AFTER extraction is stripped, BEFORE the response reaches the UI.
+  const filtered = enforceOneQuestion(assistantMessage);
+  if (filtered.length < assistantMessage.length) {
+    console.log(
+      `[claude] enforceOneQuestion trimmed ${assistantMessage.length - filtered.length} chars`
+    );
+  }
+  assistantMessage = filtered;
 
   return { assistantMessage, extraction, rawResponse, extractionFound };
 }
