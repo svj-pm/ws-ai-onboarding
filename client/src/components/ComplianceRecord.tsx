@@ -300,8 +300,21 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment }: Complianc
   const sd = suitabilityAssessment.suitability_determination;
   const flags = kycRecord.metadata.escalation_flags ?? [];
 
-  const completionPct = computeCompletion(kycRecord, suitabilityAssessment);
-  const statusLabel = kycRecord.metadata.completion_status.replace(/_/g, ' ');
+  const rawCompletionPct = computeCompletion(kycRecord, suitabilityAssessment);
+  const status = kycRecord.metadata.completion_status;
+
+  // When complete but high/critical flags exist, surface a distinct visual state.
+  const hasHighFlags = flags.some((f) => f.severity === 'high' || f.severity === 'critical');
+  const visualStatus =
+    status === 'complete' && hasHighFlags ? 'complete_review' : status;
+
+  const statusLabel =
+    visualStatus === 'complete_review'
+      ? 'Complete — Human Review Required'
+      : visualStatus.replace(/_/g, ' ');
+
+  // Pin progress bar to 100% once the onboarding is complete.
+  const completionPct = status === 'complete' ? 100 : rawCompletionPct;
 
   // Section field counts — each entry is [label, value] so the Section can show a preview
   const piData = countFields(
@@ -368,7 +381,7 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment }: Complianc
       <div className="compliance-header">
         <div className="compliance-header-top">
           <span className="compliance-title">Live Compliance Record</span>
-          <span className={`status-badge status-${kycRecord.metadata.completion_status}`}>
+          <span className={`status-badge status-${visualStatus}`}>
             {statusLabel}
           </span>
         </div>

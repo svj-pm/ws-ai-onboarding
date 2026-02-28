@@ -163,6 +163,8 @@ export interface Session {
   kycRecord: KycRecord;
   suitabilityAssessment: SuitabilityAssessment;
   lastRawResponse?: string; // Raw Claude text before parsing — for debug endpoint
+  /** Flat key→value snapshot of all fields logged in prior turns, used for delta computation. */
+  previousFields?: Map<string, string>;
   createdAt: string;
   updatedAt: string;
 }

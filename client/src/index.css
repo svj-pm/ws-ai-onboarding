@@ -378,10 +378,11 @@ body {
   letter-spacing: 0.3px;
 }
 
-.status-in_progress { background: rgba(0, 212, 120, 0.2); color: #00d478; }
-.status-complete { background: rgba(0, 212, 120, 0.3); color: #00ff90; }
-.status-escalated { background: rgba(239, 68, 68, 0.25); color: #f87171; }
-.status-abandoned { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+.status-in_progress    { background: rgba(0, 212, 120, 0.2);  color: #00d478; }
+.status-complete       { background: rgba(0, 255, 144, 0.2);  color: #00ff90; }
+.status-complete_review{ background: rgba(251, 146, 60, 0.2); color: #fb923c; }
+.status-escalated      { background: rgba(239, 68, 68, 0.25); color: #f87171; }
+.status-abandoned      { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
 
 .completion-row {
   display: flex;

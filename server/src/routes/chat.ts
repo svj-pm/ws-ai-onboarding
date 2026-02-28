@@ -122,9 +122,29 @@ function flattenObject(obj: unknown, prefix = ''): Array<[string, unknown]> {
   return result;
 }
 
+function formatGoalObject(obj: Record<string, unknown>): string {
+  const label = String(obj.goal_type ?? 'unknown');
+  const parts: string[] = [obj.priority ? String(obj.priority) : ''];
+  if (obj.target_amount) parts.push(String(obj.target_amount));
+  if (obj.target_date) parts.push(`by ${obj.target_date}`);
+  const detail = parts.filter(Boolean).join(', ');
+  return detail ? `${label} (${detail})` : label;
+}
+
 function formatFieldValue(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (Array.isArray(value)) return value.join(', ');
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '(empty)';
+    if (typeof value[0] === 'object' && value[0] !== null) {
+      const items = value as Record<string, unknown>[];
+      if ('goal_type' in items[0]) {
+        return items.map(formatGoalObject).join(', ');
+      }
+      const json = JSON.stringify(value);
+      return json.length > 80 ? json.slice(0, 77) + '...' : json;
+    }
+    return value.join(', ');
+  }
   return String(value);
 }
 
@@ -137,10 +157,38 @@ function labelForKey(dotKey: string): [string, string] {
   return [toTitle(parts[0]), toTitle(parts[parts.length - 1])];
 }
 
+/**
+ * Computes the true delta between the current extraction and what was already logged
+ * in previous turns. Returns only fields that are new or changed.
+ * Each entry is [dotKey, formattedValue, isUpdated].
+ */
+function computeDeltaFields(
+  extraction: ExtractionResult,
+  previousFields: Map<string, string>
+): Array<[string, string, boolean]> {
+  const current: Array<[string, unknown]> = [
+    ...flattenObject(extraction.kyc_updates),
+    ...flattenObject(extraction.suitability_updates),
+  ];
+
+  const delta: Array<[string, string, boolean]> = [];
+  for (const [key, value] of current) {
+    const formatted = formatFieldValue(value);
+    if (!previousFields.has(key)) {
+      delta.push([key, formatted, false]); // new field
+    } else if (previousFields.get(key) !== formatted) {
+      delta.push([key, formatted, true]);  // updated field
+    }
+    // else: unchanged repeat — skip
+  }
+  return delta;
+}
+
 function logTurnSummary(
   turnNumber: number,
   sessionId: string,
-  extraction: ExtractionResult,
+  deltaFields: Array<[string, string, boolean]>,
+  escalationFlags: ExtractionResult['escalation_flags'],
   totalFields: number
 ): void {
   const BOX = '═══════════════════════════════════════════════════════';
@@ -150,13 +198,7 @@ function logTurnSummary(
   });
   const shortId = sessionId.slice(0, 8);
 
-  // Collect delta fields from KYC + suitability updates
-  const deltaFields: Array<[string, unknown]> = [
-    ...flattenObject(extraction.kyc_updates),
-    ...flattenObject(extraction.suitability_updates),
-  ];
-
-  const newFlags = extraction.escalation_flags;
+  const newFlags = escalationFlags;
   const hasFlags = newFlags.length > 0;
 
   const lines: string[] = [''];
@@ -166,15 +208,14 @@ function logTurnSummary(
 
   if (deltaFields.length > 0) {
     lines.push(' NEW FIELDS EXTRACTED:');
-    for (const [key, value] of deltaFields) {
+    for (const [key, display, isUpdated] of deltaFields) {
       const [category, fieldName] = labelForKey(key);
-      const display = formatFieldValue(value);
-      // Highlight risk mismatches with a warning marker
-      const marker = (key === 'risk_profile.risk_mismatch_detected' && value === true) ? '⚠' : ' ';
-      lines.push(`  ${marker} ${category.padEnd(16)} → ${fieldName}: ${display}`);
+      const marker = (key === 'risk_profile.risk_mismatch_detected' && display === 'Yes') ? '⚠' : ' ';
+      const suffix = isUpdated ? '  [updated]' : '';
+      lines.push(`  ${marker} ${category.padEnd(16)} → ${fieldName}: ${display}${suffix}`);
     }
   } else {
-    lines.push(' NEW FIELDS EXTRACTED: (none)');
+    lines.push(' NEW FIELDS EXTRACTED: No new fields this turn');
   }
 
   lines.push('');
@@ -257,11 +298,36 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       message.trim()
     );
 
-    const { kycRecord, suitabilityAssessment } = applyExtraction(
+    let { kycRecord, suitabilityAssessment } = applyExtraction(
       session.kycRecord,
       session.suitabilityAssessment,
       extraction
     );
+
+    // Mark complete when the agent has delivered a recommendation and the user approves it.
+    // Condition: a full suitability_determination is present AND the user's message is affirmative.
+    const sd = suitabilityAssessment.suitability_determination;
+    const hasRecommendation =
+      !!sd?.recommended_portfolio_approach &&
+      !!sd?.suitable_account_types &&
+      sd.suitable_account_types.length > 0;
+
+    const AFFIRMATIVES = [
+      'yes', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay',
+      'sounds good', 'that works', 'go ahead', 'perfect', 'do it',
+      'great', 'absolutely', 'definitely', "let's do it", "let's go",
+      'approved', 'approve', 'confirm', 'confirmed', 'proceed',
+    ];
+    const msgLower = message.trim().toLowerCase();
+    const isAffirmative = AFFIRMATIVES.some((w) => msgLower.includes(w));
+
+    if (hasRecommendation && isAffirmative && kycRecord.metadata.completion_status === 'in_progress') {
+      kycRecord = {
+        ...kycRecord,
+        metadata: { ...kycRecord.metadata, completion_status: 'complete' },
+      };
+      console.log('[chat route] Recommendation approved — completion_status → complete');
+    }
 
     if (extractionFound) {
       const kycFields = countLeafFields(kycRecord);
@@ -275,7 +341,21 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
     // Uses kycRecord minus metadata for the field count (metadata is internal bookkeeping)
     const { metadata: _meta, ...kycData } = kycRecord;
     const totalFields = countLeafFields(kycData) + countLeafFields(suitabilityAssessment);
-    logTurnSummary(turnNumber, sessionId, extraction, totalFields);
+
+    // Compute true delta: only fields new or changed vs. what was logged in prior turns
+    const previousFields = session.previousFields ?? new Map<string, string>();
+    const deltaFields = computeDeltaFields(extraction, previousFields);
+
+    // Advance the snapshot: merge current extraction's flat pairs into previousFields
+    const updatedPreviousFields = new Map(previousFields);
+    for (const [key, value] of [
+      ...flattenObject(extraction.kyc_updates),
+      ...flattenObject(extraction.suitability_updates),
+    ]) {
+      updatedPreviousFields.set(key, formatFieldValue(value));
+    }
+
+    logTurnSummary(turnNumber, sessionId, deltaFields, extraction.escalation_flags, totalFields);
 
     const assistantMsg: ChatMessage = {
       role: 'assistant',
@@ -289,6 +369,7 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       kycRecord,
       suitabilityAssessment,
       lastRawResponse: rawResponse,
+      previousFields: updatedPreviousFields,
     });
 
     res.json({

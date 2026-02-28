@@ -40,7 +40,7 @@ Include ONLY fields where you learned NEW information in THIS exchange. Do not r
 **Personal:**
 - personal_information.legal_first_name — string
 - personal_information.legal_last_name — string
-- personal_information.date_of_birth — "YYYY-MM-DD" (if user gives age, infer approximate year: age 35 in 2026 → "1991-01-01")
+- personal_information.date_of_birth — "YYYY-MM-DD" (current year is 2026; birth year = 2026 − stated age: age 39 → "1987-01-01", age 44 → "1982-01-01", age 35 → "1991-01-01")
 - personal_information.residential_address.city — string
 - personal_information.residential_address.province_territory — "ON"|"BC"|"AB"|"QC"|"MB"|"SK"|"NB"|"NS"|"NL"|"PE"|"NT"|"NU"|"YT"
 - personal_information.residential_address.postal_code — string
@@ -126,6 +126,13 @@ const EXTRACTION_REMINDER =
   '\n\n[REQUIRED: End your response with an <extraction> block. ' +
   'Extract any fields learned in this exchange as dot-notation JSON. ' +
   'If nothing new: <extraction>{"escalation_flags":[]}</extraction>. ' +
+  'DATE OF BIRTH: the current year is 2026. When a user states their age, calculate birth year as (2026 - age). ' +
+  'A 39-year-old → 1987-01-01. A 44-year-old → 1982-01-01. Never use a year that would make the person a different age than stated. ' +
+  'INCOME RANGES: boundary values go in the lower range. $100K = 75k_to_100k (not 100k_to_150k). ' +
+  '$25K = under_25k, $50K = 25k_to_50k, $75K = 50k_to_75k, $100K = 75k_to_100k, $150K = 100k_to_150k, $250K = 150k_to_250k, $500K = 250k_to_500k. ' +
+  'COMPLETENESS CHECK: before making a recommendation, verify your extraction contains legal name, ' +
+  'residential address, phone, email, citizenship status, net worth range, and liquid assets range. ' +
+  'If any are missing, ask for them — do not skip to a recommendation. ' +
   'Remember: ask only ONE question in your response.]';
 
 const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + EXTRACTION_INSTRUCTIONS;
@@ -133,8 +140,10 @@ const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + EXTRACTION_INSTRUCTIONS;
 // The synthetic first exchange that provides Claude context about
 // what it already said to the user. Not displayed in the UI.
 const SYNTHETIC_INIT_USER = 'Hi, I want to open an investment account.';
-export const INITIAL_GREETING =
-  "Hi! I'm here to help you open the right investment account at Wealthsimple. Instead of filling out a long form, we'll just have a conversation — I'll ask about your goals and situation, and by the end I'll recommend the accounts that make the most sense for you.\n\nSo let's start there: **what brings you to Wealthsimple today?** Are you saving for something specific, working toward a goal, or just looking to put some money to work?";
+const RAW_INITIAL_GREETING =
+  "Hi! I'm here to help you find the right investment account at Wealthsimple. Instead of filling out a long form, we'll just have a conversation — I'll learn about your goals and situation, and recommend the accounts that make the most sense for you. What brings you to Wealthsimple today?";
+
+export const INITIAL_GREETING = enforceOneQuestion(RAW_INITIAL_GREETING);
 
 // The same greeting with a synthetic extraction block appended.
 // This is ONLY used when building API messages for Claude — never stored or displayed.
