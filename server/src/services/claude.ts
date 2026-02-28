@@ -133,6 +133,12 @@ const EXTRACTION_REMINDER =
   'COMPLETENESS CHECK: before making a recommendation, verify your extraction contains legal name, ' +
   'residential address, phone, email, citizenship status, net worth range, and liquid assets range. ' +
   'If any are missing, ask for them — do not skip to a recommendation. ' +
+  'TIME HORIZON: Once a time horizon is set from the user\'s explicit statement, do not change it in ' +
+  'subsequent extractions unless the user explicitly states a different timeline. If the user said they ' +
+  'want to retire in 16 years, that is over_10_years and it stays over_10_years for every subsequent ' +
+  'extraction. Only update on explicit user correction, not reinterpretation. ' +
+  'BUNDLING: When asking for multiple related pieces of information, phrase as a single statement with ' +
+  'commas, not multiple questions. End with at most one question mark. ' +
   'Remember: ask only ONE question in your response.]';
 
 const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + EXTRACTION_INSTRUCTIONS;

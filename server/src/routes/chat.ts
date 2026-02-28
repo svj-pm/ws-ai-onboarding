@@ -6,7 +6,7 @@ import {
   updateSession,
 } from '../state/sessions';
 import { chat, applyExtraction, INITIAL_GREETING } from '../services/claude';
-import type { ChatRequest, ChatMessage, ExtractionResult } from '../types';
+import type { ChatRequest, ChatMessage, ExtractionResult, KycRecord, SuitabilityAssessment } from '../types';
 
 const router = Router();
 
@@ -25,11 +25,69 @@ function countLeafFields(obj: unknown): number {
   return 1; // number or boolean
 }
 
-// ─── Turn Summary Logger ──────────────────────────────────────────────────────
+// ─── Completion (20 required fields) ─────────────────────────────────────────
 
-// How many core fields we consider "complete" — used for the completion percentage.
-// Covers the ~25 most meaningful KYC + suitability fields a user would fill in.
-const TOTAL_CORE_FIELDS = 25;
+// Returns true if a field value has been provided. false counts as filled for booleans.
+function isValueFilled(v: unknown): boolean {
+  if (v === null || v === undefined) return false;
+  if (typeof v === 'string') return v.length > 0;
+  if (Array.isArray(v)) return v.length > 0;
+  return true;
+}
+
+// Tracks exactly the 20 required fields for a Canadian investment account.
+// Mirrors the identical function in the frontend ComplianceRecord.tsx.
+function computeCompletionFromRequiredFields(
+  kyc: KycRecord,
+  suit: SuitabilityAssessment
+): { filled: number; pct: number } {
+  const pi = kyc.personal_information;
+  const addr = pi?.residential_address;
+  const ctr = kyc.citizenship_and_tax_residency;
+  const emp = kyc.employment_and_income;
+  const fp = kyc.financial_profile;
+  const sof = kyc.source_of_funds;
+  const pep = kyc.pep_and_sanctions;
+  const pa = kyc.purpose_and_activity;
+  const rp = suit.risk_profile;
+  const ik = suit.investment_knowledge;
+  const io = suit.investment_objectives;
+
+  const addressFilled =
+    isValueFilled(addr?.city) &&
+    isValueFilled(addr?.province_territory) &&
+    isValueFilled(addr?.postal_code);
+
+  const required: boolean[] = [
+    // KYC fields (13)
+    isValueFilled(pi?.legal_first_name),
+    isValueFilled(pi?.legal_last_name),
+    isValueFilled(pi?.date_of_birth),
+    addressFilled,
+    isValueFilled(pi?.phone_number),
+    isValueFilled(pi?.email_address),
+    isValueFilled(pi?.sin_provided),
+    isValueFilled(ctr?.canadian_tax_resident),
+    isValueFilled(ctr?.canadian_citizen),
+    isValueFilled(ctr?.us_person),
+    isValueFilled(emp?.employment_status),
+    isValueFilled(sof?.primary_funding_source),
+    isValueFilled(pep?.is_pep),
+    // Suitability fields (7)
+    isValueFilled(emp?.annual_income_range),
+    isValueFilled(fp?.net_worth_range),
+    isValueFilled(fp?.liquid_assets_range),
+    isValueFilled(ik?.self_assessed_level) || isValueFilled(ik?.assessed_knowledge_level),
+    isValueFilled(rp?.assessed_risk_tolerance) || isValueFilled(rp?.stated_risk_tolerance),
+    isValueFilled(io?.primary_objective) || isValueFilled(pa?.account_purpose),
+    isValueFilled(io?.time_horizon) || isValueFilled(pa?.investment_time_horizon),
+  ];
+
+  const filled = required.filter(Boolean).length;
+  return { filled, pct: Math.min(100, Math.round((filled / 20) * 100)) };
+}
+
+// ─── Turn Summary Logger ──────────────────────────────────────────────────────
 
 // Maps dot-notation extraction keys → [Category, Field Name] for display.
 const FIELD_LABELS: Record<string, [string, string]> = {
@@ -189,7 +247,7 @@ function logTurnSummary(
   sessionId: string,
   deltaFields: Array<[string, string, boolean]>,
   escalationFlags: ExtractionResult['escalation_flags'],
-  totalFields: number
+  filledRequired: number
 ): void {
   const BOX = '═══════════════════════════════════════════════════════';
   const timestamp = new Date().toLocaleString('en-CA', {
@@ -232,8 +290,8 @@ function logTurnSummary(
   }
 
   lines.push('');
-  const pct = Math.min(100, Math.round((totalFields / TOTAL_CORE_FIELDS) * 100));
-  lines.push(` COMPLETION: ${pct}% (${totalFields}/${TOTAL_CORE_FIELDS} fields)`);
+  const pct = Math.min(100, Math.round((filledRequired / 20) * 100));
+  lines.push(` COMPLETION: ${pct}% (${filledRequired}/20 required fields)`);
   lines.push(BOX);
 
   console.log(lines.join('\n'));
@@ -338,9 +396,7 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
     }
 
     // Pretty-print the per-turn summary (delta fields, flags, completion %)
-    // Uses kycRecord minus metadata for the field count (metadata is internal bookkeeping)
-    const { metadata: _meta, ...kycData } = kycRecord;
-    const totalFields = countLeafFields(kycData) + countLeafFields(suitabilityAssessment);
+    const { filled: filledRequired } = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
 
     // Compute true delta: only fields new or changed vs. what was logged in prior turns
     const previousFields = session.previousFields ?? new Map<string, string>();
@@ -355,7 +411,7 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       updatedPreviousFields.set(key, formatFieldValue(value));
     }
 
-    logTurnSummary(turnNumber, sessionId, deltaFields, extraction.escalation_flags, totalFields);
+    logTurnSummary(turnNumber, sessionId, deltaFields, extraction.escalation_flags, filledRequired);
 
     const assistantMsg: ChatMessage = {
       role: 'assistant',

@@ -238,45 +238,70 @@ function Recommendation({
 
 // ─── Completion Score ─────────────────────────────────────────────────────────
 
-function computeCompletion(kyc: KycRecord, suit: SuitabilityAssessment): number {
-  // Core KYC fields (regulatory minimums)
-  const kycFields = [
-    kyc.personal_information?.legal_first_name,
-    kyc.personal_information?.legal_last_name,
-    kyc.personal_information?.date_of_birth,
-    kyc.personal_information?.residential_address?.province_territory,
-    kyc.personal_information?.sin_provided,
-    kyc.citizenship_and_tax_residency?.canadian_tax_resident,
-    kyc.citizenship_and_tax_residency?.us_person,
-    kyc.employment_and_income?.employment_status,
-    kyc.employment_and_income?.annual_income_range,
-    kyc.financial_profile?.net_worth_range,
-    kyc.financial_profile?.liquid_assets_range,
-    kyc.source_of_funds?.primary_funding_source,
-    kyc.source_of_funds?.initial_deposit_range,
-    kyc.pep_and_sanctions?.is_pep,
-    kyc.purpose_and_activity?.account_purpose,
-    kyc.purpose_and_activity?.investment_time_horizon,
+// Returns true if a field value has been provided (false counts as filled for booleans).
+function isValueFilled(v: unknown): boolean {
+  if (v === null || v === undefined) return false;
+  if (typeof v === 'string') return v.length > 0;
+  if (Array.isArray(v)) return v.length > 0;
+  return true; // boolean (including false) and number are always filled
+}
+
+// Tracks exactly 20 required fields — the legal minimum for a Canadian investment
+// account recommendation. Returns { filled, pct } where pct never exceeds 100.
+function computeCompletionFromRequiredFields(
+  kyc: KycRecord,
+  suit: SuitabilityAssessment
+): { filled: number; pct: number } {
+  const pi = kyc.personal_information;
+  const addr = pi?.residential_address;
+  const ctr = kyc.citizenship_and_tax_residency;
+  const emp = kyc.employment_and_income;
+  const fp = kyc.financial_profile;
+  const sof = kyc.source_of_funds;
+  const pep = kyc.pep_and_sanctions;
+  const pa = kyc.purpose_and_activity;
+  const rp = suit.risk_profile;
+  const ik = suit.investment_knowledge;
+  const io = suit.investment_objectives;
+
+  // Address counts as one field only when city + province + postal_code are all present
+  const addressFilled =
+    isValueFilled(addr?.city) &&
+    isValueFilled(addr?.province_territory) &&
+    isValueFilled(addr?.postal_code);
+
+  const required: boolean[] = [
+    // KYC fields (13)
+    isValueFilled(pi?.legal_first_name),          // 1
+    isValueFilled(pi?.legal_last_name),            // 2
+    isValueFilled(pi?.date_of_birth),              // 3
+    addressFilled,                                  // 4 (city + province + postal)
+    isValueFilled(pi?.phone_number),               // 5
+    isValueFilled(pi?.email_address),              // 6
+    isValueFilled(pi?.sin_provided),               // 7 (false = refused, still answered)
+    isValueFilled(ctr?.canadian_tax_resident),     // 8
+    isValueFilled(ctr?.canadian_citizen),          // 9
+    isValueFilled(ctr?.us_person),                 // 10
+    isValueFilled(emp?.employment_status),         // 11
+    isValueFilled(sof?.primary_funding_source),    // 12
+    isValueFilled(pep?.is_pep),                    // 13
+
+    // Suitability fields (7)
+    isValueFilled(emp?.annual_income_range),       // 14
+    isValueFilled(fp?.net_worth_range),            // 15
+    isValueFilled(fp?.liquid_assets_range),        // 16
+    // 17: either self_assessed or assessed knowledge level counts
+    isValueFilled(ik?.self_assessed_level) || isValueFilled(ik?.assessed_knowledge_level),
+    // 18: either assessed or stated risk tolerance counts
+    isValueFilled(rp?.assessed_risk_tolerance) || isValueFilled(rp?.stated_risk_tolerance),
+    // 19: investment objective from suitability OR account purpose from KYC
+    isValueFilled(io?.primary_objective) || isValueFilled(pa?.account_purpose),
+    // 20: time horizon from suitability OR from KYC purpose_and_activity
+    isValueFilled(io?.time_horizon) || isValueFilled(pa?.investment_time_horizon),
   ];
 
-  // Suitability fields — behavioral and objective signals count too
-  const suitFields = [
-    suit.risk_profile?.stated_risk_tolerance,
-    suit.risk_profile?.behavioral_risk_signals?.loss_reaction,
-    suit.risk_profile?.behavioral_risk_signals?.experience_with_volatility,
-    suit.investment_knowledge?.self_assessed_level,
-    suit.investment_knowledge?.demonstrated_knowledge_signals?.has_prior_investment_experience,
-    suit.investment_objectives?.primary_objective,
-    suit.investment_objectives?.time_horizon,
-    suit.investment_objectives?.liquidity_needs,
-    suit.investment_objectives?.specific_goals?.length
-      ? suit.investment_objectives.specific_goals
-      : undefined,
-  ];
-
-  const allFields = [...kycFields, ...suitFields];
-  const filled = allFields.filter((f) => f !== undefined && f !== null).length;
-  return Math.round((filled / allFields.length) * 100);
+  const filled = required.filter(Boolean).length;
+  return { filled, pct: Math.min(100, Math.round((filled / 20) * 100)) };
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -300,7 +325,7 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment }: Complianc
   const sd = suitabilityAssessment.suitability_determination;
   const flags = kycRecord.metadata.escalation_flags ?? [];
 
-  const rawCompletionPct = computeCompletion(kycRecord, suitabilityAssessment);
+  const rawCompletion = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
   const status = kycRecord.metadata.completion_status;
 
   // When complete but high/critical flags exist, surface a distinct visual state.
@@ -314,7 +339,8 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment }: Complianc
       : visualStatus.replace(/_/g, ' ');
 
   // Pin progress bar to 100% once the onboarding is complete.
-  const completionPct = status === 'complete' ? 100 : rawCompletionPct;
+  const completionPct = status === 'complete' ? 100 : rawCompletion.pct;
+  const completionFilled = status === 'complete' ? 20 : rawCompletion.filled;
 
   // Section field counts — each entry is [label, value] so the Section can show a preview
   const piData = countFields(
@@ -389,7 +415,7 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment }: Complianc
           <div className="completion-track">
             <div className="completion-fill" style={{ width: `${completionPct}%` }} />
           </div>
-          <span className="completion-pct">{completionPct}% complete</span>
+          <span className="completion-pct">{completionFilled}/20 complete</span>
         </div>
         {flags.length > 0 && (
           <div className="flag-summary">
