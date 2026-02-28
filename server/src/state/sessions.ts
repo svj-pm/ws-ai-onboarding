@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Session, KycRecord, SuitabilityAssessment } from '../types';
+import type { Session, KycRecord, SuitabilityAssessment, SessionMetrics } from '../types';
 
 // In-memory store — sufficient for a prototype
 const sessions = new Map<string, Session>();
@@ -22,11 +22,28 @@ export function createSession(): Session {
 
   const suitabilityAssessment: SuitabilityAssessment = {};
 
+  const sessionMetrics: SessionMetrics = {
+    mode: 'unknown',
+    totalTurns: 0,
+    phase1Turns: 0,
+    phase2Turns: 0,
+    phase3Turns: 0,
+    extractionSuccessCount: 0,
+    extractionRetryCount: 0,
+    enforceOneQuestionTrims: 0,
+    fieldsPerTurn: [],
+    avgResponseLatency: 0,
+    turnLatencies: [],
+    guardrailAlerts: [],
+  };
+
   const session: Session = {
     id,
     messages: [],
     kycRecord,
     suitabilityAssessment,
+    sessionMetrics,
+    _currentPhase: 1,
     createdAt: now,
     updatedAt: now,
   };

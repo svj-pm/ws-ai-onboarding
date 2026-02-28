@@ -147,6 +147,27 @@ export interface SuitabilityAssessment {
   };
 }
 
+// ─── Session Metrics Types ────────────────────────────────────────────────────
+
+export interface SessionMetrics {
+  mode: 'exploratory' | 'accelerated' | 'unknown';
+  totalTurns: number;
+  phase1Turns: number;  // suitability phase
+  phase2Turns: number;  // compliance collection phase
+  phase3Turns: number;  // recommendation + approval phase
+  extractionSuccessCount: number;   // turns where extraction block was found
+  extractionRetryCount: number;     // turns where retry mechanism fired
+  enforceOneQuestionTrims: number;  // turns where multi-question filter activated
+  fieldsPerTurn: number[];          // new field counts per turn
+  avgResponseLatency: number;       // average Claude API response time in ms
+  turnLatencies: number[];          // per-turn API latency in ms
+  guardrailAlerts: Array<{
+    turn: number;
+    type: string;
+    message: string;
+  }>;
+}
+
 // ─── Session / Conversation Types ────────────────────────────────────────────
 
 export interface ChatMessage {
@@ -165,6 +186,9 @@ export interface Session {
   lastRawResponse?: string; // Raw Claude text before parsing — for debug endpoint
   /** Flat key→value snapshot of all fields logged in prior turns, used for delta computation. */
   previousFields?: Map<string, string>;
+  sessionMetrics: SessionMetrics;
+  /** Internal phase tracker: 1=suitability, 2=compliance, 3=recommendation. Not sent to client. */
+  _currentPhase: 1 | 2 | 3;
   createdAt: string;
   updatedAt: string;
 }
@@ -176,6 +200,7 @@ export interface CreateSessionResponse {
   message: string;
   kycRecord: KycRecord;
   suitabilityAssessment: SuitabilityAssessment;
+  sessionMetrics: SessionMetrics;
 }
 
 export interface ChatRequest {
@@ -187,6 +212,7 @@ export interface ChatResponse {
   kycRecord: KycRecord;
   suitabilityAssessment: SuitabilityAssessment;
   sessionId: string;
+  sessionMetrics: SessionMetrics;
 }
 
 // ─── Claude Extraction Types ──────────────────────────────────────────────────

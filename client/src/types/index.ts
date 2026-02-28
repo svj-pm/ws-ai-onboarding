@@ -1,5 +1,24 @@
 // Mirror of server types — kept in sync manually for the prototype
 
+export interface SessionMetrics {
+  mode: 'exploratory' | 'accelerated' | 'unknown';
+  totalTurns: number;
+  phase1Turns: number;
+  phase2Turns: number;
+  phase3Turns: number;
+  extractionSuccessCount: number;
+  extractionRetryCount: number;
+  enforceOneQuestionTrims: number;
+  fieldsPerTurn: number[];
+  avgResponseLatency: number;
+  turnLatencies: number[];
+  guardrailAlerts: Array<{
+    turn: number;
+    type: string;
+    message: string;
+  }>;
+}
+
 export interface EscalationFlag {
   flag_type: string;
   description: string;
@@ -148,6 +167,7 @@ export interface CreateSessionResponse {
   message: string;
   kycRecord: KycRecord;
   suitabilityAssessment: SuitabilityAssessment;
+  sessionMetrics: SessionMetrics;
 }
 
 export interface ChatResponse {
@@ -155,4 +175,5 @@ export interface ChatResponse {
   kycRecord: KycRecord;
   suitabilityAssessment: SuitabilityAssessment;
   sessionId: string;
+  sessionMetrics: SessionMetrics;
 }

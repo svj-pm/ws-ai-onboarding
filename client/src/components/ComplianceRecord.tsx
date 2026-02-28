@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { KycRecord, SuitabilityAssessment, EscalationFlag } from '../types';
+import type { KycRecord, SuitabilityAssessment, EscalationFlag, SessionMetrics } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -304,14 +304,124 @@ function computeCompletionFromRequiredFields(
   return { filled, pct: Math.min(100, Math.round((filled / 20) * 100)) };
 }
 
+// ─── Session Metrics Panel ────────────────────────────────────────────────────
+
+function SessionMetricsPanel({ metrics }: { metrics: SessionMetrics }) {
+  const [isOpen, setIsOpen] = useState(true);
+
+  const totalTurns = metrics.totalTurns;
+  const extractionSuccessPct =
+    totalTurns > 0 ? Math.round((metrics.extractionSuccessCount / totalTurns) * 100) : 0;
+  const avgFieldsPerTurn =
+    metrics.fieldsPerTurn.length > 0
+      ? (metrics.fieldsPerTurn.reduce((a, b) => a + b, 0) / metrics.fieldsPerTurn.length).toFixed(1)
+      : '0.0';
+  const avgLatencyFormatted =
+    Math.round(metrics.avgResponseLatency).toLocaleString('en-CA') + 'ms';
+  const modeLabel =
+    metrics.mode === 'accelerated'
+      ? 'Accelerated'
+      : metrics.mode === 'exploratory'
+        ? 'Exploratory'
+        : 'Unknown';
+
+  return (
+    <div className="metrics-panel">
+      <button
+        className="metrics-header"
+        onClick={() => setIsOpen((o) => !o)}
+        aria-expanded={isOpen}
+      >
+        <span className="metrics-icon">⚙</span>
+        <span className="metrics-title">Session Metrics</span>
+        <span className="metrics-chevron" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>
+          ▸
+        </span>
+      </button>
+
+      <div className={`metrics-body-wrapper${isOpen ? ' metrics-body-open' : ''}`}>
+        <div className="metrics-body-inner">
+          <div className="metrics-body">
+            <div className="metrics-group">
+              <span className="metrics-group-label">Conversation</span>
+              <div className="metrics-row">
+                <span className="metrics-key">Mode</span>
+                <span className="metrics-val">{modeLabel}</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Total Turns</span>
+                <span className="metrics-val">{totalTurns}</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Phase 1 (Suitability)</span>
+                <span className="metrics-val">{metrics.phase1Turns} turns</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Phase 2 (Compliance)</span>
+                <span className="metrics-val">{metrics.phase2Turns} turns</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Phase 3 (Recommend)</span>
+                <span className="metrics-val">{metrics.phase3Turns} turns</span>
+              </div>
+            </div>
+
+            <div className="metrics-group">
+              <span className="metrics-group-label">Model Quality</span>
+              <div className="metrics-row">
+                <span className="metrics-key">Extraction Success</span>
+                <span className="metrics-val">
+                  {metrics.extractionSuccessCount}/{totalTurns} ({extractionSuccessPct}%)
+                </span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Extraction Retries</span>
+                <span className="metrics-val">{metrics.extractionRetryCount}</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Multi-Q Trims</span>
+                <span className="metrics-val">{metrics.enforceOneQuestionTrims}</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Avg Fields/Turn</span>
+                <span className="metrics-val">{avgFieldsPerTurn}</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Avg API Latency</span>
+                <span className="metrics-val">{avgLatencyFormatted}</span>
+              </div>
+            </div>
+
+            {metrics.guardrailAlerts.length > 0 && (
+              <div className="metrics-group">
+                <span className="metrics-group-label metrics-alerts-label">
+                  Guardrail Alerts ({metrics.guardrailAlerts.length})
+                </span>
+                {metrics.guardrailAlerts.map((alert, i) => (
+                  <div key={i} className="metrics-alert">
+                    <span className="alert-turn">Turn {alert.turn}</span>
+                    <span className="alert-type">{alert.type.replace(/_/g, ' ')}</span>
+                    <span className="alert-msg">{alert.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface ComplianceRecordProps {
   kycRecord: KycRecord;
   suitabilityAssessment: SuitabilityAssessment;
+  sessionMetrics?: SessionMetrics;
 }
 
-export function ComplianceRecord({ kycRecord, suitabilityAssessment }: ComplianceRecordProps) {
+export function ComplianceRecord({ kycRecord, suitabilityAssessment, sessionMetrics }: ComplianceRecordProps) {
   const pi = kycRecord.personal_information;
   const ctr = kycRecord.citizenship_and_tax_residency;
   const emp = kycRecord.employment_and_income;
@@ -557,6 +667,11 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment }: Complianc
             </div>
           )}
         </Section>
+
+        {/* Session Metrics — shown when session is complete */}
+        {status === 'complete' && sessionMetrics && (
+          <SessionMetricsPanel metrics={sessionMetrics} />
+        )}
 
         {/* Footer */}
         <div className="record-footer">

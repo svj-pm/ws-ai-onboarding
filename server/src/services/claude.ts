@@ -422,6 +422,8 @@ export async function chat(
   extraction: ExtractionResult;
   rawResponse: string;
   extractionFound: boolean;
+  oneQuestionTrimChars: number;
+  extractionRetryFired: boolean;
 }> {
   const apiMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     { role: 'user', content: SYNTHETIC_INIT_USER },
@@ -467,7 +469,9 @@ export async function chat(
   // Claude occasionally drops the block on later turns. One retry with an
   // explicit correction prompt reliably recovers it without changing the
   // conversational message.
+  let extractionRetryFired = false;
   if (!extractionFound) {
+    extractionRetryFired = true;
     console.warn('[claude] ⚠ No extraction block — retrying with explicit instruction...');
 
     const retryMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
@@ -506,13 +510,13 @@ export async function chat(
 
   // ── One-question guardrail ────────────────────────────────────────────────
   // Applied AFTER extraction is stripped, BEFORE the response reaches the UI.
+  const preFilterLength = assistantMessage.length;
   const filtered = enforceOneQuestion(assistantMessage);
-  if (filtered.length < assistantMessage.length) {
-    console.log(
-      `[claude] enforceOneQuestion trimmed ${assistantMessage.length - filtered.length} chars`
-    );
+  const oneQuestionTrimChars = preFilterLength - filtered.length;
+  if (oneQuestionTrimChars > 0) {
+    console.log(`[claude] enforceOneQuestion trimmed ${oneQuestionTrimChars} chars`);
   }
   assistantMessage = filtered;
 
-  return { assistantMessage, extraction, rawResponse, extractionFound };
+  return { assistantMessage, extraction, rawResponse, extractionFound, oneQuestionTrimChars, extractionRetryFired };
 }

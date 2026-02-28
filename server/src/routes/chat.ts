@@ -6,7 +6,7 @@ import {
   updateSession,
 } from '../state/sessions';
 import { chat, applyExtraction, INITIAL_GREETING } from '../services/claude';
-import type { ChatRequest, ChatMessage, ExtractionResult, KycRecord, SuitabilityAssessment } from '../types';
+import type { ChatRequest, ChatMessage, ExtractionResult, KycRecord, SuitabilityAssessment, SessionMetrics } from '../types';
 
 const router = Router();
 
@@ -297,6 +297,192 @@ function logTurnSummary(
   console.log(lines.join('\n'));
 }
 
+// ─── Phase Transition Detection ───────────────────────────────────────────────
+
+const PHASE2_TRANSITION_PHRASES = [
+  'your legal name',
+  'legal name',
+  'for compliance',
+  'for regulatory',
+  'regulatory purposes',
+  'account setup',
+  'set up your account',
+  'complete your profile',
+  'personal details',
+  'officially set up',
+  'formally',
+  'compliance purposes',
+  'open your account',
+];
+
+function isPhase2Transition(assistantMessage: string): boolean {
+  const lower = assistantMessage.toLowerCase();
+  return PHASE2_TRANSITION_PHRASES.some((phrase) => lower.includes(phrase));
+}
+
+// ─── Guardrail Checks ─────────────────────────────────────────────────────────
+
+function runGuardrailChecks(
+  metrics: SessionMetrics,
+  turnNumber: number,
+  extractionFound: boolean,
+  extractionRetryFired: boolean,
+  completionPct: number,
+  turnLatencyMs: number,
+  deltaFields: Array<[string, string, boolean]>,
+  userMessage: string
+): Array<{ turn: number; type: string; message: string }> {
+  const alerts: Array<{ turn: number; type: string; message: string }> = [];
+
+  // 1. Extraction missing — no block found and retry also failed
+  if (!extractionFound && extractionRetryFired) {
+    alerts.push({
+      turn: turnNumber,
+      type: 'extraction_failure',
+      message: 'No extraction block found even after retry',
+    });
+  }
+
+  // 2. Stalled progress — last 3 turns all yielded 0 new fields
+  const recentFields = metrics.fieldsPerTurn.slice(-3);
+  if (recentFields.length === 3 && recentFields.every((n) => n === 0)) {
+    alerts.push({
+      turn: turnNumber,
+      type: 'stalled_progress',
+      message: 'No new fields extracted for 3 consecutive turns',
+    });
+  }
+
+  // 3. Excessive turns — more than 20 turns and not 100% complete
+  if (turnNumber > 20 && completionPct < 100) {
+    alerts.push({
+      turn: turnNumber,
+      type: 'excessive_turns',
+      message: `Conversation reached turn ${turnNumber} with only ${completionPct}% completion`,
+    });
+  }
+
+  // 4. Consistency drift — field updated but user message doesn't reference it
+  const updatedFields = deltaFields.filter(([, , isUpdated]) => isUpdated);
+  if (updatedFields.length > 0) {
+    const msgLower = userMessage.toLowerCase();
+    for (const [key] of updatedFields) {
+      // Derive searchable words from the field key (e.g. "annual_income_range" → ["annual", "income"])
+      const keyWords = key.split('.').join('_').split('_').filter((w) => w.length > 3);
+      const userMentionsField = keyWords.some((word) => msgLower.includes(word));
+      if (!userMentionsField) {
+        alerts.push({
+          turn: turnNumber,
+          type: 'consistency_drift',
+          message: `Field "${key}" updated without apparent user correction`,
+        });
+        break; // one alert per turn is enough
+      }
+    }
+  }
+
+  // 5. High latency — turn's API latency exceeded 10000ms
+  if (turnLatencyMs > 10000) {
+    alerts.push({
+      turn: turnNumber,
+      type: 'high_latency',
+      message: `API latency ${turnLatencyMs.toLocaleString('en-CA')}ms exceeded 10,000ms threshold`,
+    });
+  }
+
+  return alerts;
+}
+
+// ─── Session Summary Printer ──────────────────────────────────────────────────
+
+function printSessionSummary(
+  sessionId: string,
+  metrics: SessionMetrics,
+  kycRecord: KycRecord,
+  suitabilityAssessment: SuitabilityAssessment
+): void {
+  const BOX = '══════════════════════════════════════════════════════════════';
+  const timestamp = new Date().toLocaleString('en-CA', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+  });
+  const shortId = sessionId.slice(0, 8);
+
+  const flags = kycRecord.metadata.escalation_flags ?? [];
+  const sd = suitabilityAssessment.suitability_determination;
+  const { filled: filledRequired, pct: completionPct } = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
+
+  const totalTurns = metrics.totalTurns;
+  const extractionSuccessPct = totalTurns > 0
+    ? Math.round((metrics.extractionSuccessCount / totalTurns) * 100)
+    : 0;
+  const avgFieldsPerTurn = metrics.fieldsPerTurn.length > 0
+    ? (metrics.fieldsPerTurn.reduce((a, b) => a + b, 0) / metrics.fieldsPerTurn.length).toFixed(1)
+    : '0.0';
+  const avgLatencyFormatted = Math.round(metrics.avgResponseLatency).toLocaleString('en-CA') + 'ms';
+
+  const modeLabel = metrics.mode === 'accelerated' ? 'Accelerated' : metrics.mode === 'exploratory' ? 'Exploratory' : 'Unknown';
+
+  const lines: string[] = [''];
+  lines.push(BOX);
+  lines.push(` SESSION COMPLETE | ${timestamp}`);
+  lines.push(` Session: ${shortId}...`);
+  lines.push(BOX);
+
+  lines.push(' CONVERSATION METRICS');
+  lines.push(` Mode:                  ${modeLabel}`);
+  lines.push(` Total Turns:           ${totalTurns}`);
+  lines.push(` Phase 1 (Suitability): ${metrics.phase1Turns} turns`);
+  lines.push(` Phase 2 (Compliance):  ${metrics.phase2Turns} turns`);
+  lines.push(` Phase 3 (Recommend):   ${metrics.phase3Turns} turns`);
+
+  lines.push('');
+  lines.push(' MODEL QUALITY');
+  lines.push(` Extraction Success:    ${metrics.extractionSuccessCount}/${totalTurns} (${extractionSuccessPct}%)`);
+  lines.push(` Extraction Retries:    ${metrics.extractionRetryCount}`);
+  lines.push(` Multi-Q Trims:         ${metrics.enforceOneQuestionTrims}`);
+  lines.push(` Avg Fields/Turn:       ${avgFieldsPerTurn}`);
+  lines.push(` Avg API Latency:       ${avgLatencyFormatted}`);
+
+  lines.push('');
+  lines.push(' COMPLIANCE');
+  lines.push(` Required Fields:       ${filledRequired}/20 (${completionPct}%)`);
+  if (flags.length === 0) {
+    lines.push(` Escalation Flags:      None`);
+  } else {
+    lines.push(` Escalation Flags:      ${flags.length}`);
+    for (const flag of flags) {
+      lines.push(`   [${flag.severity.toUpperCase()}] ${flag.flag_type.replace(/_/g, ' ')} — ${flag.description}`);
+    }
+  }
+  if (metrics.guardrailAlerts.length === 0) {
+    lines.push(` Guardrail Alerts:      None`);
+  } else {
+    lines.push(` Guardrail Alerts:      ${metrics.guardrailAlerts.length}`);
+    for (const alert of metrics.guardrailAlerts) {
+      lines.push(`   Turn ${alert.turn} | ${alert.type} — ${alert.message}`);
+    }
+  }
+
+  lines.push('');
+  lines.push(' RECOMMENDATION');
+  if (sd?.suitable_account_types && sd.suitable_account_types.length > 0) {
+    lines.push(` Account Type(s):       ${sd.suitable_account_types.map((a) => a.toUpperCase()).join(', ')}`);
+  } else {
+    lines.push(` Account Type(s):       None`);
+  }
+  if (sd?.recommended_portfolio_approach) {
+    lines.push(` Portfolio:             ${sd.recommended_portfolio_approach.replace(/_/g, ' ')}`);
+  }
+  if (sd?.suitability_score !== undefined) {
+    lines.push(` Suitability Score:     ${sd.suitability_score}/100`);
+  }
+  lines.push(` Status:                Approved`);
+  lines.push(BOX);
+
+  console.log(lines.join('\n'));
+}
+
 // ─── POST /api/sessions ───────────────────────────────────────────────────────
 // Creates a new conversation session and returns the agent's opening message.
 
@@ -317,6 +503,7 @@ router.post('/sessions', (_req: Request, res: Response) => {
     message: INITIAL_GREETING,
     kycRecord: session.kycRecord,
     suitabilityAssessment: session.suitabilityAssessment,
+    sessionMetrics: session.sessionMetrics,
   });
 });
 
@@ -351,10 +538,12 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
   const turnNumber = session.messages.filter((m) => m.role === 'user').length + 1;
 
   try {
-    const { assistantMessage, extraction, rawResponse, extractionFound } = await chat(
+    const turnStart = Date.now();
+    const { assistantMessage, extraction, rawResponse, extractionFound, oneQuestionTrimChars, extractionRetryFired } = await chat(
       session.messages,
       message.trim()
     );
+    const turnLatencyMs = Date.now() - turnStart;
 
     let { kycRecord, suitabilityAssessment } = applyExtraction(
       session.kycRecord,
@@ -379,7 +568,8 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
     const msgLower = message.trim().toLowerCase();
     const isAffirmative = AFFIRMATIVES.some((w) => msgLower.includes(w));
 
-    if (hasRecommendation && isAffirmative && kycRecord.metadata.completion_status === 'in_progress') {
+    const wasInProgress = kycRecord.metadata.completion_status === 'in_progress';
+    if (hasRecommendation && isAffirmative && wasInProgress) {
       kycRecord = {
         ...kycRecord,
         metadata: { ...kycRecord.metadata, completion_status: 'complete' },
@@ -396,7 +586,7 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
     }
 
     // Pretty-print the per-turn summary (delta fields, flags, completion %)
-    const { filled: filledRequired } = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
+    const { filled: filledRequired, pct: completionPct } = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
 
     // Compute true delta: only fields new or changed vs. what was logged in prior turns
     const previousFields = session.previousFields ?? new Map<string, string>();
@@ -413,6 +603,70 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
 
     logTurnSummary(turnNumber, sessionId, deltaFields, extraction.escalation_flags, filledRequired);
 
+    // ── Session Metrics Update ──────────────────────────────────────────────
+    const prevMetrics = session.sessionMetrics;
+    const currentPhase = session._currentPhase;
+
+    // Build updated latencies and avg
+    const updatedTurnLatencies = [...prevMetrics.turnLatencies, turnLatencyMs];
+    const avgResponseLatency =
+      updatedTurnLatencies.reduce((a, b) => a + b, 0) / updatedTurnLatencies.length;
+
+    // Mode: set on turn 1 based on how many new fields were extracted
+    let mode = prevMetrics.mode;
+    if (turnNumber === 1) {
+      mode = deltaFields.length >= 3 ? 'accelerated' : 'exploratory';
+    }
+
+    // Phase counters
+    const phase1Turns = prevMetrics.phase1Turns + (currentPhase === 1 ? 1 : 0);
+    const phase2Turns = prevMetrics.phase2Turns + (currentPhase === 2 ? 1 : 0);
+    const phase3Turns = prevMetrics.phase3Turns + (currentPhase === 3 ? 1 : 0);
+
+    // Determine next phase
+    let nextPhase: 1 | 2 | 3 = currentPhase;
+    if (currentPhase === 1 && isPhase2Transition(assistantMessage)) {
+      nextPhase = 2;
+    } else if (currentPhase <= 2 && hasRecommendation) {
+      nextPhase = 3;
+    }
+
+    // Guardrail alerts — build on the updated fieldsPerTurn (including this turn's count)
+    const updatedFieldsPerTurn = [...prevMetrics.fieldsPerTurn, deltaFields.length];
+    const metricsForGuardrail: SessionMetrics = {
+      ...prevMetrics,
+      fieldsPerTurn: updatedFieldsPerTurn,
+    };
+    const newAlerts = runGuardrailChecks(
+      metricsForGuardrail,
+      turnNumber,
+      extractionFound,
+      extractionRetryFired,
+      completionPct,
+      turnLatencyMs,
+      deltaFields,
+      message.trim()
+    );
+
+    for (const alert of newAlerts) {
+      console.log(`[GUARDRAIL] Turn ${alert.turn} | ${alert.type} — ${alert.message}`);
+    }
+
+    const updatedMetrics: SessionMetrics = {
+      mode,
+      totalTurns: prevMetrics.totalTurns + 1,
+      phase1Turns,
+      phase2Turns,
+      phase3Turns,
+      extractionSuccessCount: prevMetrics.extractionSuccessCount + (extractionFound ? 1 : 0),
+      extractionRetryCount: prevMetrics.extractionRetryCount + (extractionRetryFired ? 1 : 0),
+      enforceOneQuestionTrims: prevMetrics.enforceOneQuestionTrims + (oneQuestionTrimChars > 2 ? 1 : 0),
+      fieldsPerTurn: updatedFieldsPerTurn,
+      avgResponseLatency,
+      turnLatencies: updatedTurnLatencies,
+      guardrailAlerts: [...prevMetrics.guardrailAlerts, ...newAlerts],
+    };
+
     const assistantMsg: ChatMessage = {
       role: 'assistant',
       content: assistantMessage,
@@ -426,13 +680,21 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       suitabilityAssessment,
       lastRawResponse: rawResponse,
       previousFields: updatedPreviousFields,
+      sessionMetrics: updatedMetrics,
+      _currentPhase: nextPhase,
     });
+
+    // Print session summary when the session is newly completed
+    if (kycRecord.metadata.completion_status === 'complete' && wasInProgress) {
+      printSessionSummary(sessionId, updatedMetrics, kycRecord, suitabilityAssessment);
+    }
 
     res.json({
       message: assistantMessage,
       kycRecord,
       suitabilityAssessment,
       sessionId,
+      sessionMetrics: updatedMetrics,
     });
   } catch (err) {
     console.error('[chat route] Error calling Claude:', err);
@@ -486,6 +748,7 @@ router.get('/sessions/:sessionId/debug', (req: Request, res: Response) => {
     hasExtractionBlock: extractionBlockMatch !== null && extractionBlockMatch !== undefined,
     kycRecord: session.kycRecord,
     suitabilityAssessment: session.suitabilityAssessment,
+    sessionMetrics: session.sessionMetrics,
   });
 });
 

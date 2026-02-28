@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatPane } from './components/ChatPane';
 import { ComplianceRecord } from './components/ComplianceRecord';
 import { createSession, sendMessage } from './api/chat';
-import type { ChatMessage, KycRecord, SuitabilityAssessment } from './types';
+import type { ChatMessage, KycRecord, SuitabilityAssessment, SessionMetrics } from './types';
 
 const EMPTY_KYC: KycRecord = {
   metadata: {
@@ -18,11 +18,27 @@ const EMPTY_KYC: KycRecord = {
 
 const EMPTY_SUITABILITY: SuitabilityAssessment = {};
 
+const EMPTY_METRICS: SessionMetrics = {
+  mode: 'unknown',
+  totalTurns: 0,
+  phase1Turns: 0,
+  phase2Turns: 0,
+  phase3Turns: 0,
+  extractionSuccessCount: 0,
+  extractionRetryCount: 0,
+  enforceOneQuestionTrims: 0,
+  fieldsPerTurn: [],
+  avgResponseLatency: 0,
+  turnLatencies: [],
+  guardrailAlerts: [],
+};
+
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [kycRecord, setKycRecord] = useState<KycRecord>(EMPTY_KYC);
   const [suitabilityAssessment, setSuitabilityAssessment] = useState<SuitabilityAssessment>(EMPTY_SUITABILITY);
+  const [sessionMetrics, setSessionMetrics] = useState<SessionMetrics>(EMPTY_METRICS);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const initRef = useRef(false);
@@ -38,6 +54,7 @@ export default function App() {
         setSessionId(response.sessionId);
         setKycRecord(response.kycRecord);
         setSuitabilityAssessment(response.suitabilityAssessment);
+        if (response.sessionMetrics) setSessionMetrics(response.sessionMetrics);
         // Add the initial greeting as the first message
         setMessages([
           {
@@ -84,6 +101,7 @@ export default function App() {
         console.log('[App] Setting suitabilityAssessment:', JSON.stringify(response.suitabilityAssessment, null, 2));
         setKycRecord(response.kycRecord);
         setSuitabilityAssessment(response.suitabilityAssessment);
+        if (response.sessionMetrics) setSessionMetrics(response.sessionMetrics);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
         setError(msg);
@@ -121,6 +139,7 @@ export default function App() {
         <ComplianceRecord
           kycRecord={kycRecord}
           suitabilityAssessment={suitabilityAssessment}
+          sessionMetrics={sessionMetrics}
         />
       </main>
     </div>
