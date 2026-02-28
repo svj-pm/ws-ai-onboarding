@@ -127,29 +127,225 @@ function countFields(...fields: Array<[string, unknown]>): {
   };
 }
 
-// ─── Escalation Flags ─────────────────────────────────────────────────────────
+// ─── Escalation Banner ────────────────────────────────────────────────────────
 
-function EscalationFlags({ flags }: { flags: EscalationFlag[] }) {
+const SEVERITY_ORDER: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+function EscalationBanner({ flags }: { flags: EscalationFlag[] }) {
   if (flags.length === 0) return null;
 
+  const topSeverity = flags.reduce<string>((top, f) => {
+    return (SEVERITY_ORDER[f.severity] ?? 0) > (SEVERITY_ORDER[top] ?? 0) ? f.severity : top;
+  }, flags[0].severity);
+
+  const isHigh = topSeverity === 'high' || topSeverity === 'critical';
+  const isMedium = topSeverity === 'medium';
+  const severityClass = isHigh ? 'banner-high' : isMedium ? 'banner-medium' : 'banner-low';
+  const headerLabel = isHigh
+    ? 'Human Review Required'
+    : isMedium
+      ? 'Enhanced Due Diligence Required'
+      : 'Review Recommended';
+  const headerIcon = topSeverity === 'low' ? 'ℹ' : '⚠';
+
   return (
-    <div className="escalation-section">
-      <div className="escalation-header">
-        <span>⚠ Escalation Flags</span>
-        <span className="flag-count">{flags.length}</span>
+    <div className={`escalation-banner ${severityClass}`}>
+      <div className="banner-header">
+        <span className="banner-icon">{headerIcon}</span>
+        <span className="banner-label">{headerLabel}</span>
+        <span className="banner-count">{flags.length} {flags.length === 1 ? 'flag' : 'flags'}</span>
       </div>
-      {flags.map((flag, i) => (
-        <div key={i} className={`flag-item flag-${flag.severity}`}>
-          <div className="flag-top">
-            <span className="flag-type">{flag.flag_type.replace(/_/g, ' ')}</span>
-            <span className={`flag-badge badge-${flag.severity}`}>{flag.severity}</span>
-          </div>
-          <p className="flag-desc">{flag.description}</p>
-          <span className="flag-time">
-            {new Date(flag.triggered_at).toLocaleTimeString()}
-          </span>
-        </div>
-      ))}
+      <ul className="banner-flags">
+        {flags.map((f, i) => (
+          <li key={i} className="banner-flag-item">
+            {f.severity === 'low' ? 'ℹ' : '⚠'} [{f.severity.toUpperCase()}] {f.flag_type.replace(/_/g, ' ')} — {f.description}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ─── Growth Chart ─────────────────────────────────────────────────────────────
+
+const CHART_W = 440;
+const CHART_H = 200;
+const CML = 55;  // margin left (Y labels)
+const CMR = 82;  // margin right (end label)
+const CMT = 16;  // margin top
+const CMB = 34;  // margin bottom
+const INNER_W = CHART_W - CML - CMR;
+const INNER_H = CHART_H - CMT - CMB;
+
+function parseInitialDeposit(range: string | undefined): number {
+  if (!range) return 5000;
+  const r = range.toLowerCase().replace(/,/g, '');
+  if (/under|less/.test(r)) return 5000;
+  const m = r.match(/(\d+)/);
+  return m ? Math.max(5000, parseInt(m[1], 10)) : 5000;
+}
+
+function estimateMonthlyContrib(incomeRange: string | undefined): number {
+  if (!incomeRange) return 200;
+  const r = incomeRange.toLowerCase();
+  if (/under.?25|less.?25/.test(r)) return 100;
+  if (/25.{0,5}50/.test(r)) return 200;
+  if (/50.{0,5}75/.test(r)) return 300;
+  if (/75.{0,5}100/.test(r)) return 400;
+  if (/100.{0,5}150/.test(r)) return 600;
+  if (/150.{0,5}250/.test(r)) return 1000;
+  if (/over.?250|250.{0,5}plus/.test(r)) return 1500;
+  return 200;
+}
+
+function portfolioAnnualReturn(approach: string | undefined): number {
+  if (!approach) return 0.06;
+  const a = approach.toLowerCase();
+  if (a.includes('conservative')) return 0.045;
+  if (a.includes('aggressive')) return 0.09;
+  if (a.includes('self')) return 0.07;
+  if (a.includes('growth')) return 0.075; // covers growth + managed_growth
+  if (a.includes('balanced')) return 0.06; // covers balanced + managed_balanced
+  return 0.06;
+}
+
+function yearsFromHorizon(horizon: string | undefined): number {
+  if (!horizon) return 10;
+  const h = horizon.toLowerCase();
+  if (/under.?1|less.?1/.test(h)) return 1;
+  if (/1.{0,5}3/.test(h)) return 3;
+  if (/3.{0,5}5/.test(h)) return 5;
+  if (/5.{0,5}10/.test(h)) return 10;
+  if (/over.?10|10.{0,5}plus|long/.test(h)) return 20;
+  return 10;
+}
+
+function buildGrowthData(initial: number, monthly: number, annualRet: number, years: number): number[] {
+  const pts = [initial];
+  for (let y = 1; y <= years; y++) {
+    pts.push(pts[y - 1] * (1 + annualRet) + monthly * 12);
+  }
+  return pts;
+}
+
+function fmtDollars(v: number): string {
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `$${Math.round(v / 1_000)}K`;
+  return `$${Math.round(v)}`;
+}
+
+function GrowthChart({
+  portfolioApproach,
+  incomeRange,
+  initialDepositRange,
+  timeHorizon,
+}: {
+  portfolioApproach: string | undefined;
+  incomeRange: string | undefined;
+  initialDepositRange: string | undefined;
+  timeHorizon: string | undefined;
+}) {
+  const initial = parseInitialDeposit(initialDepositRange);
+  const monthly = estimateMonthlyContrib(incomeRange);
+  const ret = portfolioAnnualReturn(portfolioApproach);
+  const years = yearsFromHorizon(timeHorizon);
+  const data = buildGrowthData(initial, monthly, ret, years);
+  const maxVal = data[data.length - 1];
+
+  const toX = (y: number) => (y / Math.max(years, 1)) * INNER_W;
+  const toY = (v: number) => INNER_H - (v / maxVal) * INNER_H;
+
+  const linePts = data.map((v, i) => `${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+  const linePath = `M ${linePts.join(' L ')}`;
+  const areaPath = `${linePath} L ${toX(years).toFixed(1)},${INNER_H} L 0,${INNER_H} Z`;
+
+  const yRefs = [0, maxVal * 0.5, maxVal];
+  const step = years <= 5 ? 1 : years <= 10 ? 2 : 5;
+  const xTicks: number[] = [];
+  for (let y = 0; y <= years; y += step) xTicks.push(y);
+  if (xTicks[xTicks.length - 1] !== years) xTicks.push(years);
+
+  const retPct = (ret * 100).toFixed(1);
+
+  return (
+    <div className="growth-chart-wrap">
+      <svg
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        className="growth-chart-svg"
+        aria-label="Projected portfolio growth chart"
+      >
+        <defs>
+          <linearGradient id="growth-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#00d478" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#00d478" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+
+        <g transform={`translate(${CML},${CMT})`}>
+          {/* Y-axis grid lines + labels */}
+          {yRefs.map((v, i) => (
+            <g key={i}>
+              <line
+                x1={0} y1={toY(v)} x2={INNER_W} y2={toY(v)}
+                stroke="rgba(255,255,255,0.08)" strokeWidth="1"
+              />
+              <text
+                x={-7} y={toY(v) + 4}
+                fontSize="9" textAnchor="end"
+                fill="rgba(255,255,255,0.35)"
+              >
+                {v === 0 ? '$0' : fmtDollars(v)}
+              </text>
+            </g>
+          ))}
+
+          {/* Area fill */}
+          <path d={areaPath} fill="url(#growth-fill)" />
+
+          {/* Animated growth line */}
+          <path
+            d={linePath}
+            fill="none"
+            stroke="#00d478"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            pathLength="1"
+            className="chart-line"
+          />
+
+          {/* End dot + label — fade in after line draws */}
+          <g className="chart-end-group">
+            <circle cx={toX(years)} cy={toY(maxVal)} r="4" fill="#00d478" />
+            <text x={toX(years) + 9} y={toY(maxVal) - 1} fontSize="10" fill="rgba(255,255,255,0.55)">
+              Projected:
+            </text>
+            <text x={toX(years) + 9} y={toY(maxVal) + 13} fontSize="12" fontWeight="700" fill="#00d478">
+              {fmtDollars(maxVal)}
+            </text>
+          </g>
+
+          {/* X-axis baseline */}
+          <line x1={0} y1={INNER_H} x2={INNER_W} y2={INNER_H} stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+
+          {/* X-axis labels */}
+          {xTicks.map((y) => (
+            <text
+              key={y}
+              x={toX(y)} y={INNER_H + 18}
+              fontSize="9"
+              textAnchor={y === 0 ? 'start' : y === years ? 'end' : 'middle'}
+              fill="rgba(255,255,255,0.35)"
+            >
+              {y === 0 ? 'Today' : `Yr ${y}`}
+            </text>
+          ))}
+        </g>
+      </svg>
+
+      <p className="chart-disclaimer">
+        Projected growth is illustrative only and assumes consistent contributions and average annual returns of {retPct}%. Actual results will vary based on market conditions.
+      </p>
     </div>
   );
 }
@@ -158,8 +354,14 @@ function EscalationFlags({ flags }: { flags: EscalationFlag[] }) {
 
 function Recommendation({
   determination,
+  incomeRange,
+  initialDepositRange,
+  timeHorizon,
 }: {
   determination: NonNullable<SuitabilityAssessment['suitability_determination']>;
+  incomeRange?: string;
+  initialDepositRange?: string;
+  timeHorizon?: string;
 }) {
   const alloc = determination.recommended_asset_allocation;
   return (
@@ -218,6 +420,13 @@ function Recommendation({
           )}
         </div>
       )}
+
+      <GrowthChart
+        portfolioApproach={determination.recommended_portfolio_approach}
+        incomeRange={incomeRange}
+        initialDepositRange={initialDepositRange}
+        timeHorizon={timeHorizon}
+      />
 
       {determination.suitability_rationale && (
         <p className="rec-rationale">{determination.suitability_rationale}</p>
@@ -535,10 +744,15 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment, sessionMetr
       </div>
 
       <div className="compliance-body">
-        <EscalationFlags flags={flags} />
+        <EscalationBanner flags={flags} />
 
         {sd?.suitable_account_types && sd.suitable_account_types.length > 0 && (
-          <Recommendation determination={sd} />
+          <Recommendation
+            determination={sd}
+            incomeRange={emp?.annual_income_range}
+            initialDepositRange={sof?.initial_deposit_range}
+            timeHorizon={io?.time_horizon ?? pa?.investment_time_horizon}
+          />
         )}
 
         {/* Personal Information */}

@@ -70,9 +70,39 @@ body {
   letter-spacing: 0.3px;
 }
 
-.header-meta {
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-note {
   font-size: 11px;
   color: rgba(255,255,255,0.35);
+}
+
+.btn-new-conversation {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.6);
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.btn-new-conversation:hover:not(:disabled) {
+  color: #00d478;
+  border-color: #00d478;
+}
+
+.btn-new-conversation:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ─── Main Layout (split pane) ────────────────────────────────────────────── */
@@ -83,6 +113,11 @@ body {
   flex: 1;
   overflow: hidden;
   gap: 0;
+  transition: opacity 0.2s ease;
+}
+
+.app-main.resetting {
+  opacity: 0;
 }
 
 /* ─── Chat Pane ───────────────────────────────────────────────────────────── */
@@ -436,81 +471,119 @@ body {
 .compliance-body::-webkit-scrollbar-track { background: transparent; }
 .compliance-body::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
 
-/* ─── Escalation Flags ────────────────────────────────────────────────────── */
+/* ─── Escalation Banner ───────────────────────────────────────────────────── */
 
-.escalation-section {
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
+@keyframes banner-pulse-high {
+  0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  70%  { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+@keyframes banner-pulse-medium {
+  0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  70%  { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+@keyframes banner-pulse-low {
+  0%   { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.5); }
+  70%  { box-shadow: 0 0 0 10px rgba(234, 179, 8, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+}
+
+.escalation-banner {
   border-radius: 10px;
   overflow: hidden;
 }
 
-.escalation-header {
+.banner-high {
+  background: #FEE2E2;
+  border: 1.5px solid #EF4444;
+  animation: banner-pulse-high 0.8s ease-out 1 both;
+}
+
+.banner-medium {
+  background: #FEF3C7;
+  border: 1.5px solid #F59E0B;
+  animation: banner-pulse-medium 0.8s ease-out 1 both;
+}
+
+.banner-low {
+  background: #FEF9C3;
+  border: 1.5px solid #EAB308;
+  animation: banner-pulse-low 0.8s ease-out 1 both;
+}
+
+.banner-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 10px 14px;
-  background: #fff3e0;
-  font-size: 12px;
+  border-bottom: 1px solid;
+}
+
+.banner-high .banner-header {
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom-color: rgba(239, 68, 68, 0.3);
+}
+
+.banner-medium .banner-header {
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom-color: rgba(245, 158, 11, 0.35);
+}
+
+.banner-low .banner-header {
+  background: rgba(234, 179, 8, 0.1);
+  border-bottom-color: rgba(234, 179, 8, 0.3);
+}
+
+.banner-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.banner-label {
+  font-size: 11px;
   font-weight: 700;
-  color: #92400e;
-  border-bottom: 1px solid #fed7aa;
-}
-
-.flag-count {
-  background: #f97316;
-  color: white;
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 10px;
-}
-
-.flag-item {
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(254, 215, 170, 0.5);
-}
-
-.flag-item:last-child { border-bottom: none; }
-
-.flag-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 3px;
-}
-
-.flag-type {
-  font-size: 12px;
-  font-weight: 600;
-  color: #92400e;
-}
-
-.flag-badge {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
+  flex: 1;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
 }
 
-.badge-low { background: #e0f2fe; color: #0369a1; }
-.badge-medium { background: #fef3c7; color: #92400e; }
-.badge-high { background: #fee2e2; color: #b91c1c; }
-.badge-critical { background: #dc2626; color: white; }
+.banner-high .banner-label { color: #B91C1C; }
+.banner-medium .banner-label { color: #92400E; }
+.banner-low .banner-label { color: #713F12; }
 
-.flag-desc {
-  font-size: 12px;
-  color: #78350f;
-  line-height: 1.4;
-}
-
-.flag-time {
+.banner-count {
   font-size: 10px;
-  color: #a16207;
-  display: block;
-  margin-top: 3px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  color: white;
 }
+
+.banner-high .banner-count { background: #EF4444; }
+.banner-medium .banner-count { background: #F59E0B; }
+.banner-low .banner-count { background: #EAB308; }
+
+.banner-flags {
+  list-style: none;
+  padding: 6px 0;
+}
+
+.banner-flag-item {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 5px 14px;
+}
+
+.banner-flag-item:not(:last-child) {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.banner-high .banner-flag-item { color: #7F1D1D; }
+.banner-medium .banner-flag-item { color: #78350F; }
+.banner-low .banner-flag-item { color: #713F12; }
 
 /* ─── Recommendation Card ─────────────────────────────────────────────────── */
 
@@ -650,6 +723,48 @@ body {
 .sev-caution { background: rgba(251, 191, 36, 0.15); color: #fcd34d; }
 .sev-warning { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
 .sev-block { background: rgba(239, 68, 68, 0.3); color: #f87171; }
+
+/* ─── Growth Chart ────────────────────────────────────────────────────────── */
+
+.growth-chart-wrap {
+  margin-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 12px;
+}
+
+.growth-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+@keyframes chart-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes chart-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.chart-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: chart-draw 1s ease-out forwards;
+}
+
+.chart-end-group {
+  animation: chart-fade-in 0.3s ease-out 0.95s both;
+}
+
+.chart-disclaimer {
+  font-size: 10px;
+  color: rgba(255,255,255,0.28);
+  font-style: italic;
+  margin-top: 6px;
+  line-height: 1.4;
+}
 
 /* ─── Record Section ──────────────────────────────────────────────────────── */
 

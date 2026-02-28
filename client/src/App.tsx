@@ -40,38 +40,56 @@ export default function App() {
   const [suitabilityAssessment, setSuitabilityAssessment] = useState<SuitabilityAssessment>(EMPTY_SUITABILITY);
   const [sessionMetrics, setSessionMetrics] = useState<SessionMetrics>(EMPTY_METRICS);
   const [isLoading, setIsLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const initRef = useRef(false);
+
+  async function startSession() {
+    const response = await createSession();
+    setSessionId(response.sessionId);
+    setKycRecord(response.kycRecord);
+    setSuitabilityAssessment(response.suitabilityAssessment);
+    if (response.sessionMetrics) setSessionMetrics(response.sessionMetrics);
+    setMessages([
+      {
+        role: 'assistant',
+        content: response.message,
+        timestamp: new Date().toISOString(),
+        visible: true,
+      },
+    ]);
+  }
 
   // Start a session on mount
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
 
-    async function init() {
-      try {
-        const response = await createSession();
-        setSessionId(response.sessionId);
-        setKycRecord(response.kycRecord);
-        setSuitabilityAssessment(response.suitabilityAssessment);
-        if (response.sessionMetrics) setSessionMetrics(response.sessionMetrics);
-        // Add the initial greeting as the first message
-        setMessages([
-          {
-            role: 'assistant',
-            content: response.message,
-            timestamp: new Date().toISOString(),
-            visible: true,
-          },
-        ]);
-      } catch (err) {
-        setError('Failed to start a session. Is the server running on port 3001?');
-        console.error(err);
-      }
-    }
-
-    init();
+    startSession().catch((err) => {
+      setError('Failed to start a session. Is the server running on port 3001?');
+      console.error(err);
+    });
   }, []);
+
+  const handleNewConversation = useCallback(async () => {
+    if (isLoading || isResetting) return;
+    setIsResetting(true);
+    // Brief pause for fade-out
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    setMessages([]);
+    setKycRecord(EMPTY_KYC);
+    setSuitabilityAssessment(EMPTY_SUITABILITY);
+    setSessionMetrics(EMPTY_METRICS);
+    setError(null);
+    try {
+      await startSession();
+    } catch (err) {
+      setError('Failed to start a new session.');
+      console.error(err);
+    } finally {
+      setIsResetting(false);
+    }
+  }, [isLoading, isResetting]);
 
   const handleSendMessage = useCallback(
     async (text: string) => {
@@ -123,12 +141,20 @@ export default function App() {
           <span className="brand-name">Wealthsimple</span>
           <span className="brand-tag">AI Onboarding</span>
         </div>
-        <div className="header-meta">
+        <div className="header-actions">
+          <button
+            className="btn-new-conversation"
+            onClick={handleNewConversation}
+            disabled={isLoading || isResetting}
+            title="Reset and start a new conversation"
+          >
+            ↺ New Conversation
+          </button>
           <span className="header-note">Prototype — FINTRAC / CSA NI 31-103 compliance demo</span>
         </div>
       </header>
 
-      <main className="app-main">
+      <main className={`app-main${isResetting ? ' resetting' : ''}`}>
         <ChatPane
           messages={messages}
           isLoading={isLoading}

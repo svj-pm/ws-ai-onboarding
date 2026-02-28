@@ -551,6 +551,25 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       extraction
     );
 
+    // ── Backend SIN validation safety net ────────────────────────────────────
+    // If the model set sin_provided = true this turn, verify the user's message
+    // actually contains a valid 9-digit SIN. Override to false if not found.
+    const sinExtractedThisTurn = extraction.kyc_updates.personal_information?.sin_provided === true;
+    if (sinExtractedThisTurn) {
+      // Accept plain 9-digit strings or 3-3-3 formatted SINs (spaces or hyphens).
+      const validSinPattern = /\b(\d{9}|\d{3}[ -]\d{3}[ -]\d{3})\b/;
+      if (!validSinPattern.test(message.trim())) {
+        console.log('[chat route] SIN validation failed — no valid 9-digit SIN found in message, overriding sin_provided to false');
+        kycRecord = {
+          ...kycRecord,
+          personal_information: {
+            ...(kycRecord.personal_information ?? {}),
+            sin_provided: false,
+          },
+        };
+      }
+    }
+
     // Mark complete when the agent has delivered a recommendation and the user approves it.
     // Condition: a full suitability_determination is present AND the user's message is affirmative.
     const sd = suitabilityAssessment.suitability_determination;

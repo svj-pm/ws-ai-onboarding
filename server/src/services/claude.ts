@@ -137,6 +137,9 @@ const EXTRACTION_REMINDER =
   'subsequent extractions unless the user explicitly states a different timeline. If the user said they ' +
   'want to retire in 16 years, that is over_10_years and it stays over_10_years for every subsequent ' +
   'extraction. Only update on explicit user correction, not reinterpretation. ' +
+  'SIN VALIDATION: A valid Canadian SIN is exactly 9 numeric digits. If the user provides a number ' +
+  'that is not exactly 9 digits, do NOT record sin_provided as true. Ask them to verify: ' +
+  '"That doesn\'t look quite right — Canadian Social Insurance Numbers are 9 digits. Could you double-check the number?" ' +
   'BUNDLING: When asking for multiple related pieces of information, phrase as a single statement with ' +
   'commas, not multiple questions. End with at most one question mark. ' +
   'Remember: ask only ONE question in your response.]';
