@@ -384,23 +384,29 @@ export function applyExtraction(
     extraction.suitability_updates
   ) as SuitabilityAssessment;
 
-  // Accumulate escalation flags (append, never replace)
+  // Accumulate escalation flags — deduplicate by flag_type.
+  // If a flag with the same type already exists, update its description and timestamp only
+  // if the new description is longer (more detailed). Never add a duplicate entry.
   if (extraction.escalation_flags.length > 0) {
-    const newFlags = extraction.escalation_flags.map((f) => ({
-      ...f,
-      triggered_at: now,
-    }));
+    const mergedFlags = [...(updatedKyc.metadata.escalation_flags ?? [])];
+    for (const f of extraction.escalation_flags) {
+      const idx = mergedFlags.findIndex((e) => e.flag_type === f.flag_type);
+      if (idx >= 0) {
+        if (f.description.length > mergedFlags[idx].description.length) {
+          mergedFlags[idx] = { ...mergedFlags[idx], description: f.description, triggered_at: now };
+        }
+      } else {
+        mergedFlags.push({ ...f, triggered_at: now });
+      }
+    }
     updatedKyc = {
       ...updatedKyc,
       metadata: {
         ...updatedKyc.metadata,
-        escalation_flags: [
-          ...(updatedKyc.metadata.escalation_flags ?? []),
-          ...newFlags,
-        ],
+        escalation_flags: mergedFlags,
         updated_at: now,
         completion_status:
-          newFlags.some((f) => f.severity === 'critical')
+          mergedFlags.some((f) => f.severity === 'critical')
             ? 'escalated'
             : updatedKyc.metadata.completion_status,
       },

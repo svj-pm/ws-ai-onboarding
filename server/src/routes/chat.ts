@@ -393,6 +393,139 @@ function runGuardrailChecks(
   return alerts;
 }
 
+// ─── Audit Summary Generator ──────────────────────────────────────────────────
+
+// Formats machine-style or human-style money range strings into readable text.
+// e.g. "under_25k" → "under $25K", "75k_to_100k" → "$75K-$100K", "$75K-$100K" → passes through
+function formatMoneyRange(raw: string | undefined): string {
+  if (!raw) return 'unknown';
+  if (raw.includes('$') || raw.includes(' ')) return raw.replace(/_/g, ' ');
+  const s = raw.toLowerCase();
+  const underM = s.match(/^under[_]?(\d+)k?$/);
+  if (underM) return `under $${underM[1]}K`;
+  const overM = s.match(/^over[_]?(\d+)k?$/);
+  if (overM) return `over $${overM[1]}K`;
+  const rangeM = s.match(/^(\d+)k?[_]to[_](\d+)k?$/);
+  if (rangeM) return `$${rangeM[1]}K-$${rangeM[2]}K`;
+  return raw.replace(/_/g, ' ');
+}
+
+// Derives age from a YYYY-MM-DD date of birth string against 2026.
+function ageFromDob(dob: string | undefined): number | null {
+  if (!dob) return null;
+  const year = parseInt(dob.split('-')[0], 10);
+  return isNaN(year) ? null : 2026 - year;
+}
+
+// Builds a plain-text audit summary paragraph from session data.
+// Called once when completion_status transitions to "complete".
+// No Claude call — assembled entirely from already-extracted fields.
+function buildConversationSummary(
+  kyc: KycRecord,
+  suit: SuitabilityAssessment
+): string {
+  const pi  = kyc.personal_information;
+  const ctr = kyc.citizenship_and_tax_residency;
+  const emp = kyc.employment_and_income;
+  const fp  = kyc.financial_profile;
+  const sof = kyc.source_of_funds;
+  const pep = kyc.pep_and_sanctions;
+  const pa  = kyc.purpose_and_activity;
+  const rp  = suit.risk_profile;
+  const ik  = suit.investment_knowledge;
+  const io  = suit.investment_objectives;
+  const sd  = suit.suitability_determination;
+  const flags = kyc.metadata.escalation_flags ?? [];
+
+  // ── Identity ──────────────────────────────────────────────────────────────
+  const firstName = pi?.legal_first_name ?? '';
+  const lastName  = pi?.legal_last_name  ?? '';
+  const fullName  = [firstName, lastName].filter(Boolean).join(' ') || 'Unknown';
+
+  const age = ageFromDob(pi?.date_of_birth);
+  const ageStr = age != null ? `${age}-year-old` : '';
+
+  const empStatus   = emp?.employment_status?.replace(/_/g, '-') ?? '';
+  const jobTitle    = emp?.job_title ?? '';
+  const employer    = emp?.employer_name;
+  const employerStr = employer ? `at ${employer}` : '';
+
+  const city     = pi?.residential_address?.city ?? '';
+  const province = pi?.residential_address?.province_territory ?? '';
+  const location = [city, province].filter(Boolean).join(', ');
+
+  const identityParts = [fullName, 'is a', ageStr, empStatus, jobTitle, employerStr].filter(Boolean);
+  let identitySentence = identityParts.join(' ');
+  if (location) identitySentence += ` in ${location}`;
+  identitySentence += '.';
+
+  // ── Citizenship / tax ─────────────────────────────────────────────────────
+  const citizenPart   = ctr?.canadian_citizen   === true  ? 'Canadian citizen'
+                      : ctr?.canadian_citizen   === false ? 'non-Canadian citizen' : '';
+  const taxPart       = ctr?.canadian_tax_resident === true  ? 'Canadian tax resident'
+                      : ctr?.canadian_tax_resident === false ? 'not a Canadian tax resident' : '';
+  const usPart        = ctr?.us_person === true  ? 'US person (FATCA)'
+                      : ctr?.us_person === false ? 'not a US person' : '';
+  const citizenStr = [citizenPart, taxPart, usPart].filter(Boolean).join(', ');
+  const citizenshipSentence = citizenStr
+    ? citizenStr.charAt(0).toUpperCase() + citizenStr.slice(1) + '.'
+    : '';
+
+  // ── Financials ────────────────────────────────────────────────────────────
+  const income   = formatMoneyRange(emp?.annual_income_range);
+  const netWorth = formatMoneyRange(fp?.net_worth_range);
+  const liquid   = formatMoneyRange(fp?.liquid_assets_range);
+  const source   = (sof?.primary_funding_source ?? 'unknown').replace(/_/g, ' ');
+  const financialSentence =
+    `Annual income: ${income}. Net worth: ${netWorth}, liquid assets: ${liquid}. Source of funds: ${source}.`;
+
+  // ── PEP ───────────────────────────────────────────────────────────────────
+  let pepSentence = '';
+  if (pep?.is_pep === true) {
+    const pepType   = (pep.pep_type ?? 'unknown type').replace(/_/g, ' ');
+    const pepDetail = [emp?.job_title, emp?.industry].filter(Boolean).join(', ');
+    pepSentence = `PEP: ${pepType}${pepDetail ? ` (${pepDetail})` : ''}.`;
+  } else if (pep?.is_pep === false) {
+    pepSentence = 'Not a PEP.';
+  }
+
+  // ── Suitability ───────────────────────────────────────────────────────────
+  const objective    = (io?.primary_objective ?? pa?.account_purpose?.join(', ') ?? 'unknown').replace(/_/g, ' ');
+  const timeHorizon  = (io?.time_horizon ?? pa?.investment_time_horizon ?? 'unknown').replace(/_/g, ' ');
+  const risk         = (rp?.assessed_risk_tolerance ?? rp?.stated_risk_tolerance ?? 'unknown').replace(/_/g, ' ');
+  const knowledge    = (ik?.assessed_knowledge_level ?? ik?.self_assessed_level ?? 'unknown').replace(/_/g, ' ');
+  const suitabilitySentence =
+    `Investment objective: ${objective} with a ${timeHorizon} horizon. ` +
+    `Risk tolerance assessed as ${risk}. Investment knowledge: ${knowledge}.`;
+
+  // ── Recommendation ────────────────────────────────────────────────────────
+  const accountTypes = sd?.suitable_account_types?.map((a) => a.toUpperCase()).join(' + ') ?? 'unknown';
+  const portfolio    = (sd?.recommended_portfolio_approach ?? 'unknown').replace(/_/g, ' ');
+  const alloc        = sd?.recommended_asset_allocation;
+  const equities     = alloc?.equities_pct   ?? '?';
+  const fixedIncome  = alloc?.fixed_income_pct ?? '?';
+  const score        = sd?.suitability_score;
+
+  let recSentence = `Recommended: ${accountTypes} with ${portfolio} portfolio`;
+  if (alloc) recSentence += ` (${equities}% equities, ${fixedIncome}% fixed income)`;
+  recSentence += score !== undefined ? `. Suitability score: ${score}/100.` : '.';
+
+  // ── Escalation ────────────────────────────────────────────────────────────
+  const escalationSentence = flags.length === 0
+    ? 'No escalation flags.'
+    : `Escalation: ${flags.map((f) => `${f.flag_type.replace(/_/g, ' ')} — ${f.description}`).join('; ')}.`;
+
+  return [
+    identitySentence,
+    citizenshipSentence,
+    financialSentence,
+    pepSentence,
+    suitabilitySentence,
+    recSentence,
+    escalationSentence,
+  ].filter(Boolean).join(' ');
+}
+
 // ─── Session Summary Printer ──────────────────────────────────────────────────
 
 function printSessionSummary(
@@ -481,6 +614,20 @@ function printSessionSummary(
   lines.push(BOX);
 
   console.log(lines.join('\n'));
+
+  // Print audit summary block immediately after the session summary
+  const summary = kycRecord.metadata.conversation_summary;
+  if (summary) {
+    const AUDIT_BOX = '══════════════════════════════════════════════════════════════';
+    console.log([
+      '',
+      AUDIT_BOX,
+      ' AUDIT SUMMARY',
+      AUDIT_BOX,
+      ` ${summary}`,
+      AUDIT_BOX,
+    ].join('\n'));
+  }
 }
 
 // ─── POST /api/sessions ───────────────────────────────────────────────────────
@@ -589,9 +736,14 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
 
     const wasInProgress = kycRecord.metadata.completion_status === 'in_progress';
     if (hasRecommendation && isAffirmative && wasInProgress) {
+      const conversationSummary = buildConversationSummary(kycRecord, suitabilityAssessment);
       kycRecord = {
         ...kycRecord,
-        metadata: { ...kycRecord.metadata, completion_status: 'complete' },
+        metadata: {
+          ...kycRecord.metadata,
+          completion_status: 'complete',
+          conversation_summary: conversationSummary,
+        },
       };
       console.log('[chat route] Recommendation approved — completion_status → complete');
     }

@@ -35,6 +35,7 @@ export interface KycRecord {
     agent_version: string;
     completion_status: 'in_progress' | 'complete' | 'escalated' | 'abandoned';
     escalation_flags: EscalationFlag[];
+    conversation_summary?: string;
   };
   personal_information?: {
     legal_first_name?: string;

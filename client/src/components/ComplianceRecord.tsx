@@ -148,20 +148,28 @@ function EscalationBanner({ flags }: { flags: EscalationFlag[] }) {
       : 'Review Recommended';
   const headerIcon = topSeverity === 'low' ? 'ℹ' : '⚠';
 
+  const uniqueTypeCount = new Set(flags.map((f) => f.flag_type)).size;
+
   return (
     <div className={`escalation-banner ${severityClass}`}>
       <div className="banner-header">
         <span className="banner-icon">{headerIcon}</span>
         <span className="banner-label">{headerLabel}</span>
-        <span className="banner-count">{flags.length} {flags.length === 1 ? 'flag' : 'flags'}</span>
+        {uniqueTypeCount >= 2 && (
+          <span className="banner-count">{uniqueTypeCount} flags</span>
+        )}
       </div>
-      <ul className="banner-flags">
-        {flags.map((f, i) => (
-          <li key={i} className="banner-flag-item">
-            {f.severity === 'low' ? 'ℹ' : '⚠'} [{f.severity.toUpperCase()}] {f.flag_type.replace(/_/g, ' ')} — {f.description}
-          </li>
-        ))}
-      </ul>
+      {uniqueTypeCount === 1 ? (
+        <p className="banner-single-desc">{flags[0].description}</p>
+      ) : (
+        <ul className="banner-flags">
+          {flags.map((f, i) => (
+            <li key={i} className="banner-flag-item">
+              {f.severity === 'low' ? 'ℹ' : '⚠'} [{f.severity.toUpperCase()}] {f.flag_type.replace(/_/g, ' ')} — {f.description}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -511,6 +519,31 @@ function computeCompletionFromRequiredFields(
 
   const filled = required.filter(Boolean).length;
   return { filled, pct: Math.min(100, Math.round((filled / 20) * 100)) };
+}
+
+// ─── Audit Summary Card ───────────────────────────────────────────────────────
+
+function AuditSummaryCard({ summary }: { summary: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(summary).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="audit-summary-card">
+      <div className="audit-summary-header">
+        <span className="audit-summary-title">Audit Summary</span>
+        <button className="audit-copy-btn" onClick={handleCopy} title="Copy to clipboard">
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <p className="audit-summary-text">{summary}</p>
+    </div>
+  );
 }
 
 // ─── Session Metrics Panel ────────────────────────────────────────────────────
@@ -881,6 +914,11 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment, sessionMetr
             </div>
           )}
         </Section>
+
+        {/* Audit Summary — shown when session is complete */}
+        {status === 'complete' && kycRecord.metadata.conversation_summary && (
+          <AuditSummaryCard summary={kycRecord.metadata.conversation_summary} />
+        )}
 
         {/* Session Metrics — shown when session is complete */}
         {status === 'complete' && sessionMetrics && (

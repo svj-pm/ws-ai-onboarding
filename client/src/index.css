@@ -585,6 +585,16 @@ body {
 .banner-medium .banner-flag-item { color: #78350F; }
 .banner-low .banner-flag-item { color: #713F12; }
 
+.banner-single-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 5px 14px 8px;
+  margin: 0;
+}
+.banner-high .banner-single-desc { color: #7F1D1D; }
+.banner-medium .banner-single-desc { color: #78350F; }
+.banner-low .banner-single-desc { color: #713F12; }
+
 /* ─── Recommendation Card ─────────────────────────────────────────────────── */
 
 .recommendation-card {
@@ -1037,6 +1047,56 @@ body {
   color: #d1d5db;
   font-family: inherit;
   font-style: italic;
+}
+
+/* ─── Audit Summary Card ──────────────────────────────────────────────────── */
+
+.audit-summary-card {
+  margin: 8px 0;
+  border: 1px solid rgba(0, 212, 120, 0.3);
+  border-radius: 8px;
+  background: rgba(0, 212, 120, 0.05);
+  overflow: hidden;
+}
+
+.audit-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid rgba(0, 212, 120, 0.15);
+}
+
+.audit-summary-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #00b86a;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.audit-copy-btn {
+  font-size: 11px;
+  font-weight: 500;
+  color: #00b86a;
+  background: rgba(0, 212, 120, 0.1);
+  border: 1px solid rgba(0, 212, 120, 0.25);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.audit-copy-btn:hover {
+  background: rgba(0, 212, 120, 0.2);
+}
+
+.audit-summary-text {
+  font-size: 13px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.82);
+  padding: 12px 14px;
+  margin: 0;
 }
 
 /* ─── Session Metrics Panel ───────────────────────────────────────────────── */
