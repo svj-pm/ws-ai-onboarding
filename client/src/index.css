@@ -986,6 +986,12 @@ body {
   flex-shrink: 0;
 }
 
+.value-dimmed {
+  color: #9ca3af;
+  font-style: italic;
+  font-weight: 400;
+}
+
 /* ─── Goals List ──────────────────────────────────────────────────────────── */
 
 .goals-list {

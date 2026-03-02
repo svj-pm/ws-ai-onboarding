@@ -31,7 +31,8 @@ export interface KycRecord {
   personal_information?: {
     legal_first_name?: string;
     legal_last_name?: string;
-    date_of_birth?: string;
+    date_of_birth?: string;           // confirmed full date (YYYY-MM-DD), Phase 2 only
+    estimated_birth_year?: number;    // age-based estimate from Phase 1, e.g. 1991
     residential_address?: {
       street_address?: string;
       city?: string;

@@ -94,6 +94,7 @@ const FIELD_LABELS: Record<string, [string, string]> = {
   'personal_information.legal_first_name':                              ['Personal Info',   'First Name'],
   'personal_information.legal_last_name':                               ['Personal Info',   'Last Name'],
   'personal_information.date_of_birth':                                 ['Personal Info',   'Date of Birth'],
+  'personal_information.estimated_birth_year':                          ['Personal Info',   'Est. Birth Year'],
   'personal_information.residential_address.city':                      ['Personal Info',   'City'],
   'personal_information.residential_address.province_territory':        ['Personal Info',   'Province'],
   'personal_information.residential_address.postal_code':               ['Personal Info',   'Postal Code'],
@@ -422,7 +423,8 @@ function ageFromDob(dob: string | undefined): number | null {
 // No Claude call — assembled entirely from already-extracted fields.
 function buildConversationSummary(
   kyc: KycRecord,
-  suit: SuitabilityAssessment
+  suit: SuitabilityAssessment,
+  isHandoff = false,
 ): string {
   const pi  = kyc.personal_information;
   const ctr = kyc.citizenship_and_tax_residency;
@@ -440,9 +442,10 @@ function buildConversationSummary(
   // ── Identity ──────────────────────────────────────────────────────────────
   const firstName = pi?.legal_first_name ?? '';
   const lastName  = pi?.legal_last_name  ?? '';
-  const fullName  = [firstName, lastName].filter(Boolean).join(' ') || 'Unknown';
+  const fullName  = [firstName, lastName].filter(Boolean).join(' ') || 'Client';
 
-  const age = ageFromDob(pi?.date_of_birth);
+  const age = ageFromDob(pi?.date_of_birth)
+           ?? (pi?.estimated_birth_year != null ? 2026 - pi.estimated_birth_year : null);
   const ageStr = age != null ? `${age}-year-old` : '';
 
   const empStatus   = emp?.employment_status?.replace(/_/g, '-') ?? '';
@@ -499,16 +502,21 @@ function buildConversationSummary(
     `Risk tolerance assessed as ${risk}. Investment knowledge: ${knowledge}.`;
 
   // ── Recommendation ────────────────────────────────────────────────────────
-  const accountTypes = sd?.suitable_account_types?.map((a) => a.toUpperCase()).join(' + ') ?? 'unknown';
-  const portfolio    = (sd?.recommended_portfolio_approach ?? 'unknown').replace(/_/g, ' ');
-  const alloc        = sd?.recommended_asset_allocation;
-  const equities     = alloc?.equities_pct   ?? '?';
-  const fixedIncome  = alloc?.fixed_income_pct ?? '?';
-  const score        = sd?.suitability_score;
+  let recSentence: string;
+  if (isHandoff) {
+    recSentence = 'No recommendation — handed off to advisor.';
+  } else {
+    const accountTypes = sd?.suitable_account_types?.map((a) => a.toUpperCase()).join(' + ') ?? 'unknown';
+    const portfolio    = (sd?.recommended_portfolio_approach ?? 'unknown').replace(/_/g, ' ');
+    const alloc        = sd?.recommended_asset_allocation;
+    const equities     = alloc?.equities_pct   ?? '?';
+    const fixedIncome  = alloc?.fixed_income_pct ?? '?';
+    const score        = sd?.suitability_score;
 
-  let recSentence = `Recommended: ${accountTypes} with ${portfolio} portfolio`;
-  if (alloc) recSentence += ` (${equities}% equities, ${fixedIncome}% fixed income)`;
-  recSentence += score !== undefined ? `. Suitability score: ${score}/100.` : '.';
+    recSentence = `Recommended: ${accountTypes} with ${portfolio} portfolio`;
+    if (alloc) recSentence += ` (${equities}% equities, ${fixedIncome}% fixed income)`;
+    recSentence += score !== undefined ? `. Suitability score: ${score}/100.` : '.';
+  }
 
   // ── Escalation ────────────────────────────────────────────────────────────
   const escalationSentence = flags.length === 0
@@ -764,7 +772,7 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       (currentStatus === 'in_progress' || currentStatus === 'escalated');
     if (isHandoff) {
       const handoffReason = extraction.handoff_reason ?? 'Situation requires human advisor';
-      const conversationSummary = buildConversationSummary(kycRecord, suitabilityAssessment);
+      const conversationSummary = buildConversationSummary(kycRecord, suitabilityAssessment, true);
       kycRecord = {
         ...kycRecord,
         metadata: {

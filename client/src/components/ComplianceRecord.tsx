@@ -21,18 +21,19 @@ interface FieldProps {
   value: unknown;
   sensitive?: boolean;
   highlight?: boolean;
+  dimmed?: boolean;
 }
 
-function Field({ label, value, sensitive, highlight }: FieldProps) {
+function Field({ label, value, sensitive, highlight, dimmed }: FieldProps) {
   const isEmpty = value === null || value === undefined;
   const display = sensitive && !isEmpty ? '●●●-●●●-●●●' : formatValue(value);
 
   return (
     <div className={`record-field ${isEmpty ? 'field-empty' : 'field-filled'} ${highlight ? 'field-highlight' : ''}`}>
       <span className="field-label">{label}</span>
-      <span className={`field-value ${isEmpty ? 'value-empty' : ''}`}>
+      <span className={`field-value ${isEmpty ? 'value-empty' : ''} ${dimmed && !isEmpty ? 'value-dimmed' : ''}`}>
         {isEmpty ? '—' : display}
-        {!isEmpty && <span className="field-dot" />}
+        {!isEmpty && !dimmed && <span className="field-dot" />}
       </span>
     </div>
   );
@@ -796,7 +797,13 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment, sessionMetr
         <Section title="Personal Information" icon="👤" {...piData}>
           <Field label="First Name" value={pi?.legal_first_name} />
           <Field label="Last Name" value={pi?.legal_last_name} />
-          <Field label="Date of Birth" value={pi?.date_of_birth} />
+          {pi?.date_of_birth ? (
+            <Field label="Date of Birth" value={pi.date_of_birth} />
+          ) : pi?.estimated_birth_year ? (
+            <Field label="Est. Birth Year" value={String(pi.estimated_birth_year)} dimmed />
+          ) : (
+            <Field label="Date of Birth" value={undefined} />
+          )}
           <Field label="City" value={pi?.residential_address?.city} />
           <Field label="Province" value={pi?.residential_address?.province_territory} />
           <Field label="Postal Code" value={pi?.residential_address?.postal_code} />

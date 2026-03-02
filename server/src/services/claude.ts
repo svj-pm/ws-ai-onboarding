@@ -40,7 +40,8 @@ Include ONLY fields where you learned NEW information in THIS exchange. Do not r
 **Personal:**
 - personal_information.legal_first_name — string
 - personal_information.legal_last_name — string
-- personal_information.date_of_birth — "YYYY-MM-DD" (current year is 2026; birth year = 2026 − stated age: age 39 → "1987-01-01", age 44 → "1982-01-01", age 35 → "1991-01-01")
+- personal_information.estimated_birth_year — integer year estimated from stated age (2026 − age). Set during Phase 1 when the user mentions their age. e.g. age 35 → 1991, age 39 → 1987, age 44 → 1982. Do NOT set date_of_birth here.
+- personal_information.date_of_birth — "YYYY-MM-DD". Only set this when the user explicitly provides their full birth date (day, month, and year) in Phase 2. Never fabricate a day or month from age alone.
 - personal_information.residential_address.city — string
 - personal_information.residential_address.province_territory — "ON"|"BC"|"AB"|"QC"|"MB"|"SK"|"NB"|"NS"|"NL"|"PE"|"NT"|"NU"|"YT"
 - personal_information.residential_address.postal_code — string
@@ -134,8 +135,10 @@ const EXTRACTION_REMINDER =
   '\n\n[REQUIRED: End your response with an <extraction> block. ' +
   'Extract any fields learned in this exchange as dot-notation JSON. ' +
   'If nothing new: <extraction>{"escalation_flags":[]}</extraction>. ' +
-  'DATE OF BIRTH: the current year is 2026. When a user states their age, calculate birth year as (2026 - age). ' +
-  'A 39-year-old → 1987-01-01. A 44-year-old → 1982-01-01. Never use a year that would make the person a different age than stated. ' +
+  'DATE OF BIRTH: When a user states their age, set personal_information.estimated_birth_year = (2026 − age) as an integer. ' +
+  'e.g. age 35 → 1991, age 39 → 1987, age 44 → 1982. ' +
+  'Do NOT set personal_information.date_of_birth until Phase 2 when the user provides their actual birth date (day, month, year). ' +
+  'Never fabricate January 1st or any other day/month from age alone. ' +
   'INCOME RANGES: boundary values go in the lower range. $100K = 75k_to_100k (not 100k_to_150k). ' +
   '$25K = under_25k, $50K = 25k_to_50k, $75K = 50k_to_75k, $100K = 75k_to_100k, $150K = 100k_to_150k, $250K = 150k_to_250k, $500K = 250k_to_500k. ' +
   'COMPLETENESS CHECK: before making a recommendation, verify your extraction contains legal name, ' +

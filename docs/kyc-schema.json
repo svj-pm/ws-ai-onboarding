@@ -89,7 +89,11 @@
         "date_of_birth": {
           "type": "string",
           "format": "date",
-          "description": "Date of birth (YYYY-MM-DD). Must be 18+ for account opening."
+          "description": "Date of birth (YYYY-MM-DD). Confirmed full date — only set when the user explicitly provides day, month, and year in Phase 2. Must be 18+ for account opening."
+        },
+        "estimated_birth_year": {
+          "type": "integer",
+          "description": "Birth year estimated from stated age (2026 − age). Set during Phase 1 when the user mentions their age. Not a confirmed date — replaced by date_of_birth once collected."
         },
         "residential_address": {
           "type": "object",
