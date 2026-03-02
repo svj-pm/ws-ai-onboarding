@@ -118,12 +118,13 @@ This system is designed for the Canadian investment account opening process:
 
 ## What I'd Build Next
 
-- **Address contradiction detection**: Flag when opener location differs from provided address
-- **Conversation branching**: Handle users who change their mind mid-conversation about goals or risk tolerance
 - **Multi-language support**: French conversation flow for Quebec compliance
 - **A/B testing framework**: Compare conversion rates between AI onboarding and traditional forms
-- **Human handoff protocol**: Seamless escalation to a live advisor when the AI reaches its limits
 - **Document upload**: ID verification and proof of address within the conversation flow
+- **Conversation branching**: Handle users who change their mind mid-conversation about goals or risk tolerance
+
+## Also read
+- SUBMISSION.md for a short written explanation covering: what the human can now do that they couldn't before; what AI is responsible for; where AI must stop; and what would break first at scale.
 
 ## Author
 
