@@ -62,12 +62,29 @@ function TypingIndicator() {
   );
 }
 
+function HandoffNotice({ reason }: { reason?: string }) {
+  return (
+    <div className="handoff-notice">
+      <div className="handoff-notice-icon">⇗</div>
+      <div className="handoff-notice-content">
+        <p className="handoff-notice-message">
+          I'm connecting you with a Wealthsimple advisor who can help with{' '}
+          {reason ? <em>{reason}</em> : 'your situation'}.
+          They'll have everything we've discussed so far, so you won't need to repeat anything.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 interface ChatPaneProps {
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
   onSendMessage: (message: string) => void;
   sessionId: string | null;
+  isHandedOff?: boolean;
+  handoffReason?: string;
 }
 
 export function ChatPane({
@@ -76,6 +93,8 @@ export function ChatPane({
   error,
   onSendMessage,
   sessionId,
+  isHandedOff,
+  handoffReason,
 }: ChatPaneProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -109,7 +128,7 @@ export function ChatPane({
     }
   }
 
-  const canSend = input.trim().length > 0 && !isLoading && !!sessionId;
+  const canSend = input.trim().length > 0 && !isLoading && !!sessionId && !isHandedOff;
 
   return (
     <div className="chat-pane">
@@ -128,6 +147,7 @@ export function ChatPane({
           <MessageBubble key={i} message={m} />
         ))}
         {isLoading && <TypingIndicator />}
+        {isHandedOff && <HandoffNotice reason={handoffReason} />}
         {error && (
           <div className="error-banner">
             <strong>Error:</strong> {error}
@@ -136,6 +156,12 @@ export function ChatPane({
         <div ref={messagesEndRef} />
       </div>
 
+      {isHandedOff ? (
+        <div className="handoff-waiting">
+          <span className="handoff-pulse" />
+          Connected to advisor — they have your full conversation history
+        </div>
+      ) : (
       <form className="chat-input-form" onSubmit={handleSubmit}>
         <textarea
           ref={textareaRef}
@@ -164,6 +190,7 @@ export function ChatPane({
           </svg>
         </button>
       </form>
+      )}
     </div>
   );
 }

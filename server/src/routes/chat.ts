@@ -526,6 +526,43 @@ function buildConversationSummary(
   ].filter(Boolean).join(' ');
 }
 
+// ─── Handoff Block Printer ────────────────────────────────────────────────────
+
+function printHandoffBlock(
+  sessionId: string,
+  handoffReason: string,
+  conversationSummary: string,
+  turnNumber: number,
+  kycRecord: KycRecord,
+  suitabilityAssessment: SuitabilityAssessment,
+  metrics: SessionMetrics
+): void {
+  const TOP    = '═══ HANDOFF REQUIRED ═══';
+  const BOTTOM = '═══════════════════════';
+  const shortId = sessionId.slice(0, 8);
+  const { filled: filledRequired } = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
+  const flags = kycRecord.metadata.escalation_flags ?? [];
+
+  const flagLines = flags.length === 0
+    ? 'None'
+    : flags.map((f) => `[${f.severity.toUpperCase()}] ${f.flag_type.replace(/_/g, ' ')} — ${f.description}`).join('\n  ');
+
+  const lines: string[] = [
+    '',
+    TOP,
+    `Session: ${shortId}...`,
+    `Reason: ${handoffReason}`,
+    `Turn: ${turnNumber} (${metrics.totalTurns} total)`,
+    `Fields Collected: ${filledRequired}/20`,
+    `Escalation Flags: ${flagLines}`,
+    `Audit Summary: ${conversationSummary}`,
+    BOTTOM,
+    '',
+  ];
+
+  console.log(lines.join('\n'));
+}
+
 // ─── Session Summary Printer ──────────────────────────────────────────────────
 
 function printSessionSummary(
@@ -717,6 +754,29 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       }
     }
 
+    // ── Handoff detection ──────────────────────────────────────────────────────
+    // If Claude signals requires_handoff, transition to handed_off status,
+    // generate audit summary, store handoff_reason, and log to console.
+    // Allow both 'in_progress' and 'escalated': applyExtraction may have already
+    // set status to 'escalated' via critical flags in the same extraction block.
+    const currentStatus = kycRecord.metadata.completion_status;
+    const isHandoff = extraction.requires_handoff === true &&
+      (currentStatus === 'in_progress' || currentStatus === 'escalated');
+    if (isHandoff) {
+      const handoffReason = extraction.handoff_reason ?? 'Situation requires human advisor';
+      const conversationSummary = buildConversationSummary(kycRecord, suitabilityAssessment);
+      kycRecord = {
+        ...kycRecord,
+        metadata: {
+          ...kycRecord.metadata,
+          completion_status: 'handed_off',
+          handoff_reason: handoffReason,
+          conversation_summary: conversationSummary,
+        },
+      };
+      console.log('[chat route] Handoff triggered — completion_status → handed_off');
+    }
+
     // Mark complete when the agent has delivered a recommendation and the user approves it.
     // Condition: a full suitability_determination is present AND the user's message is affirmative.
     const sd = suitabilityAssessment.suitability_determination;
@@ -860,12 +920,26 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       printSessionSummary(sessionId, updatedMetrics, kycRecord, suitabilityAssessment);
     }
 
+    // Print handoff block when a handoff was just triggered
+    if (isHandoff) {
+      printHandoffBlock(
+        sessionId,
+        kycRecord.metadata.handoff_reason ?? 'Situation requires human advisor',
+        kycRecord.metadata.conversation_summary ?? '',
+        turnNumber,
+        kycRecord,
+        suitabilityAssessment,
+        updatedMetrics
+      );
+    }
+
     res.json({
       message: assistantMessage,
       kycRecord,
       suitabilityAssessment,
       sessionId,
       sessionMetrics: updatedMetrics,
+      ...(isHandoff ? { handoff: true, handoff_reason: kycRecord.metadata.handoff_reason } : {}),
     });
   } catch (err) {
     console.error('[chat route] Error calling Claude:', err);

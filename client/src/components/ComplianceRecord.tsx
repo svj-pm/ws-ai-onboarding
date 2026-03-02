@@ -683,12 +683,13 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment, sessionMetr
   // When complete but high/critical flags exist, surface a distinct visual state.
   const hasHighFlags = flags.some((f) => f.severity === 'high' || f.severity === 'critical');
   const visualStatus =
+    status === 'handed_off' ? 'handed_off' :
     status === 'complete' && hasHighFlags ? 'complete_review' : status;
 
   const statusLabel =
-    visualStatus === 'complete_review'
-      ? 'Complete — Human Review Required'
-      : visualStatus.replace(/_/g, ' ');
+    visualStatus === 'handed_off' ? 'Handed Off — Routed to Advisor' :
+    visualStatus === 'complete_review' ? 'Complete — Human Review Required' :
+    visualStatus.replace(/_/g, ' ');
 
   // Pin progress bar to 100% once the onboarding is complete.
   const completionPct = status === 'complete' ? 100 : rawCompletion.pct;
@@ -763,6 +764,9 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment, sessionMetr
             {statusLabel}
           </span>
         </div>
+        {status === 'handed_off' && kycRecord.metadata.handoff_reason && (
+          <p className="handoff-reason-note">{kycRecord.metadata.handoff_reason}</p>
+        )}
         <div className="completion-row">
           <div className="completion-track">
             <div className="completion-fill" style={{ width: `${completionPct}%` }} />
@@ -915,13 +919,13 @@ export function ComplianceRecord({ kycRecord, suitabilityAssessment, sessionMetr
           )}
         </Section>
 
-        {/* Audit Summary — shown when session is complete */}
-        {status === 'complete' && kycRecord.metadata.conversation_summary && (
+        {/* Audit Summary — shown when session is complete or handed off */}
+        {(status === 'complete' || status === 'handed_off') && kycRecord.metadata.conversation_summary && (
           <AuditSummaryCard summary={kycRecord.metadata.conversation_summary} />
         )}
 
-        {/* Session Metrics — shown when session is complete */}
-        {status === 'complete' && sessionMetrics && (
+        {/* Session Metrics — shown when session is complete or handed off */}
+        {(status === 'complete' || status === 'handed_off') && sessionMetrics && (
           <SessionMetricsPanel metrics={sessionMetrics} />
         )}
 

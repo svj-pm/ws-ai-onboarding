@@ -23,9 +23,10 @@ export interface KycRecord {
     updated_at: string;
     conversation_id: string;
     agent_version: string;
-    completion_status: 'in_progress' | 'complete' | 'escalated' | 'abandoned';
+    completion_status: 'in_progress' | 'complete' | 'escalated' | 'abandoned' | 'handed_off';
     escalation_flags: EscalationFlag[];
     conversation_summary?: string;
+    handoff_reason?: string;
   };
   personal_information?: {
     legal_first_name?: string;
@@ -214,6 +215,8 @@ export interface ChatResponse {
   suitabilityAssessment: SuitabilityAssessment;
   sessionId: string;
   sessionMetrics: SessionMetrics;
+  handoff?: boolean;
+  handoff_reason?: string;
 }
 
 // ─── Claude Extraction Types ──────────────────────────────────────────────────
@@ -222,4 +225,6 @@ export interface ExtractionResult {
   kyc_updates: Partial<KycRecord>;
   suitability_updates: Partial<SuitabilityAssessment>;
   escalation_flags: Array<Omit<EscalationFlag, 'triggered_at'>>;
+  requires_handoff?: boolean;
+  handoff_reason?: string;
 }

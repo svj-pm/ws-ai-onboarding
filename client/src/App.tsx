@@ -41,6 +41,7 @@ export default function App() {
   const [sessionMetrics, setSessionMetrics] = useState<SessionMetrics>(EMPTY_METRICS);
   const [isLoading, setIsLoading] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isHandedOff, setIsHandedOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const initRef = useRef(false);
 
@@ -80,6 +81,7 @@ export default function App() {
     setKycRecord(EMPTY_KYC);
     setSuitabilityAssessment(EMPTY_SUITABILITY);
     setSessionMetrics(EMPTY_METRICS);
+    setIsHandedOff(false);
     setError(null);
     try {
       await startSession();
@@ -120,6 +122,7 @@ export default function App() {
         setKycRecord(response.kycRecord);
         setSuitabilityAssessment(response.suitabilityAssessment);
         if (response.sessionMetrics) setSessionMetrics(response.sessionMetrics);
+        if (response.handoff) setIsHandedOff(true);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error';
         setError(msg);
@@ -161,6 +164,8 @@ export default function App() {
           error={error}
           onSendMessage={handleSendMessage}
           sessionId={sessionId}
+          isHandedOff={isHandedOff}
+          handoffReason={kycRecord.metadata.handoff_reason}
         />
         <ComplianceRecord
           kycRecord={kycRecord}

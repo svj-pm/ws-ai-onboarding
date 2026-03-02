@@ -117,6 +117,14 @@ Include ONLY fields where you learned NEW information in THIS exchange. Do not r
 Add to escalation_flags array for any new concerns raised in this exchange:
 {"flag_type":"pep_detected"|"contradictory_information"|"high_risk_jurisdiction"|"unusual_source_of_funds"|"non_resident_tax_complexity"|"suitability_mismatch"|"incomplete_information"|"sanctions_screening_required"|"age_eligibility_concern","description":"plain English explanation","severity":"low"|"medium"|"high"|"critical"}
 
+### Human Handoff
+
+If the situation requires a human advisor (complex trust structures, active legal proceedings, multi-jurisdiction corporate/offshore accounts, user explicitly asks to speak with a human, or user refuses FINTRAC-required information after explanation), include at the top level of the extraction:
+"requires_handoff": true,
+"handoff_reason": "plain English reason explaining why this requires a human advisor"
+
+These are top-level keys, not dot-notation. Only set requires_handoff when truly necessary — not for routine escalation flags.
+
 CRITICAL: The extraction block must be the VERY LAST thing in your response. No text after </extraction>.
 `;
 
@@ -142,7 +150,11 @@ const EXTRACTION_REMINDER =
   '"That doesn\'t look quite right — Canadian Social Insurance Numbers are 9 digits. Could you double-check the number?" ' +
   'BUNDLING: When asking for multiple related pieces of information, phrase as a single statement with ' +
   'commas, not multiple questions. End with at most one question mark. ' +
-  'Remember: ask only ONE question in your response.]';
+  'Remember: ask only ONE question in your response. ' +
+  'HANDOFF: If the user\'s situation is beyond conversational onboarding (complex family/discretionary trusts, ' +
+  'active legal proceedings, multi-jurisdiction corporate/offshore structures, user explicitly asks for a human, ' +
+  'or user refuses FINTRAC-required information after explanation), set "requires_handoff": true and ' +
+  '"handoff_reason": "plain English explanation" as top-level keys in your extraction block.]';
 
 const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + EXTRACTION_INSTRUCTIONS;
 
@@ -211,16 +223,30 @@ function convertFlatExtraction(flat: Record<string, unknown>): {
   kyc_updates: Record<string, unknown>;
   suitability_updates: Record<string, unknown>;
   escalation_flags: ExtractionResult['escalation_flags'];
+  requires_handoff?: boolean;
+  handoff_reason?: string;
 } {
   const kyc: Record<string, unknown> = {};
   const suitability: Record<string, unknown> = {};
   const flags: ExtractionResult['escalation_flags'] = [];
+  let requiresHandoff: boolean | undefined;
+  let handoffReason: string | undefined;
 
   for (const [dotKey, value] of Object.entries(flat)) {
     if (dotKey === 'escalation_flags') {
       if (Array.isArray(value)) {
         flags.push(...(value as ExtractionResult['escalation_flags']));
       }
+      continue;
+    }
+
+    if (dotKey === 'requires_handoff') {
+      requiresHandoff = value === true;
+      continue;
+    }
+
+    if (dotKey === 'handoff_reason') {
+      handoffReason = typeof value === 'string' ? value : undefined;
       continue;
     }
 
@@ -254,7 +280,7 @@ function convertFlatExtraction(flat: Record<string, unknown>): {
     }
   }
 
-  return { kyc_updates: kyc, suitability_updates: suitability, escalation_flags: flags };
+  return { kyc_updates: kyc, suitability_updates: suitability, escalation_flags: flags, requires_handoff: requiresHandoff, handoff_reason: handoffReason };
 }
 
 // ─── Response Parsing ─────────────────────────────────────────────────────────
@@ -297,12 +323,14 @@ function parseClaudeResponse(rawText: string): {
 
   try {
     const parsed = JSON.parse(rawJson);
-    const { kyc_updates, suitability_updates, escalation_flags } = convertFlatExtraction(parsed);
+    const { kyc_updates, suitability_updates, escalation_flags, requires_handoff, handoff_reason } = convertFlatExtraction(parsed);
 
     const extraction: ExtractionResult = {
       kyc_updates: kyc_updates as Partial<KycRecord>,
       suitability_updates: suitability_updates as Partial<SuitabilityAssessment>,
       escalation_flags,
+      requires_handoff,
+      handoff_reason,
     };
 
     const kycSections = Object.keys(extraction.kyc_updates);
