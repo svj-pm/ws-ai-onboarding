@@ -1,6 +1,6 @@
 # AI-Native Onboarding for Wealth Management Companies in Canadian Market
 
-An AI-powered conversational onboarding system that replaces traditional form-based KYC and suitability collection with a natural conversation. Built for the an AI Builders program.
+An AI-powered conversational onboarding system that replaces traditional form-based KYC and suitability collection with a natural conversation. Built for the AI Builders program.
 
 ## The Problem
 
