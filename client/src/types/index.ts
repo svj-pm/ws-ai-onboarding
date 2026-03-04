@@ -6,6 +6,7 @@ export interface SessionMetrics {
   phase1Turns: number;
   phase2Turns: number;
   phase3Turns: number;
+  phase4Turns: number;
   extractionSuccessCount: number;
   extractionRetryCount: number;
   enforceOneQuestionTrims: number;
@@ -148,6 +149,7 @@ export interface SuitabilityAssessment {
     };
     suitability_score?: number;
     suitability_rationale?: string;
+    recommendation_status?: 'preliminary' | 'confirmed';
     warnings?: Array<{
       warning_type: string;
       description: string;

@@ -141,6 +141,7 @@ export interface SuitabilityAssessment {
     };
     suitability_score?: number;
     suitability_rationale?: string;
+    recommendation_status?: 'preliminary' | 'confirmed';
     warnings?: Array<{
       warning_type: string;
       description: string;
@@ -156,8 +157,9 @@ export interface SessionMetrics {
   mode: 'exploratory' | 'accelerated' | 'unknown';
   totalTurns: number;
   phase1Turns: number;  // suitability phase
-  phase2Turns: number;  // compliance collection phase
-  phase3Turns: number;  // recommendation + approval phase
+  phase2Turns: number;  // preliminary recommendation phase
+  phase3Turns: number;  // identity/compliance collection phase
+  phase4Turns: number;  // final confirmation phase
   extractionSuccessCount: number;   // turns where extraction block was found
   extractionRetryCount: number;     // turns where retry mechanism fired
   enforceOneQuestionTrims: number;  // turns where multi-question filter activated
@@ -190,8 +192,8 @@ export interface Session {
   /** Flat key→value snapshot of all fields logged in prior turns, used for delta computation. */
   previousFields?: Map<string, string>;
   sessionMetrics: SessionMetrics;
-  /** Internal phase tracker: 1=suitability, 2=compliance, 3=recommendation. Not sent to client. */
-  _currentPhase: 1 | 2 | 3;
+  /** Internal phase tracker: 1=suitability, 2=preliminary rec, 3=identity/compliance, 4=final confirmation. Not sent to client. */
+  _currentPhase: 1 | 2 | 3 | 4;
   createdAt: string;
   updatedAt: string;
 }

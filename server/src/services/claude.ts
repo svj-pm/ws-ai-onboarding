@@ -112,6 +112,7 @@ Include ONLY fields where you learned NEW information in THIS exchange. Do not r
 - suitability_determination.recommended_asset_allocation.alternatives_pct — number
 - suitability_determination.suitability_score — number 0–100
 - suitability_determination.suitability_rationale — string
+- suitability_determination.recommendation_status — "preliminary"|"confirmed"
 
 ### Escalation Flags
 
@@ -157,7 +158,15 @@ const EXTRACTION_REMINDER =
   'HANDOFF: If the user\'s situation is beyond conversational onboarding (complex family/discretionary trusts, ' +
   'active legal proceedings, multi-jurisdiction corporate/offshore structures, user explicitly asks for a human, ' +
   'or user refuses FINTRAC-required information after explanation), set "requires_handoff": true and ' +
-  '"handoff_reason": "plain English explanation" as top-level keys in your extraction block.]';
+  '"handoff_reason": "plain English explanation" as top-level keys in your extraction block. ' +
+  'RECOMMENDATIONS: When you deliver a preliminary or final recommendation, you MUST include ALL of these fields in your extraction: ' +
+  'suitability_determination.suitable_account_types (array of account type strings), ' +
+  'suitability_determination.recommended_portfolio_approach (string), ' +
+  'suitability_determination.recommended_asset_allocation.equities_pct (integer), ' +
+  'suitability_determination.recommended_asset_allocation.fixed_income_pct (integer), ' +
+  'suitability_determination.suitability_score (integer 0-100), ' +
+  'suitability_determination.recommendation_status ("preliminary" or "confirmed"). ' +
+  'Do not set recommendation_status without also including all of the above recommendation details.]';
 
 const SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + EXTRACTION_INSTRUCTIONS;
 

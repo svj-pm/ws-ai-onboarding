@@ -378,6 +378,12 @@ function Recommendation({
       <div className="rec-header">
         <span className="rec-icon">✦</span>
         <span className="rec-title">Account Recommendation</span>
+        {determination.recommendation_status === 'preliminary' && (
+          <span className="rec-status-badge rec-status-preliminary">Preliminary</span>
+        )}
+        {determination.recommendation_status === 'confirmed' && (
+          <span className="rec-status-badge rec-status-confirmed">Confirmed</span>
+        )}
         {determination.suitability_score !== undefined && (
           <span className="rec-score">Score: {determination.suitability_score}/100</span>
         )}
@@ -600,12 +606,16 @@ function SessionMetricsPanel({ metrics }: { metrics: SessionMetrics }) {
                 <span className="metrics-val">{metrics.phase1Turns} turns</span>
               </div>
               <div className="metrics-row">
-                <span className="metrics-key">Phase 2 (Compliance)</span>
+                <span className="metrics-key">Phase 2 (Prelim Rec)</span>
                 <span className="metrics-val">{metrics.phase2Turns} turns</span>
               </div>
               <div className="metrics-row">
-                <span className="metrics-key">Phase 3 (Recommend)</span>
+                <span className="metrics-key">Phase 3 (Identity)</span>
                 <span className="metrics-val">{metrics.phase3Turns} turns</span>
+              </div>
+              <div className="metrics-row">
+                <span className="metrics-key">Phase 4 (Final)</span>
+                <span className="metrics-val">{metrics.phase4Turns} turns</span>
               </div>
             </div>
 

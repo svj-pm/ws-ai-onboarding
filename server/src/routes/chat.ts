@@ -300,25 +300,45 @@ function logTurnSummary(
 
 // ─── Phase Transition Detection ───────────────────────────────────────────────
 
-const PHASE2_TRANSITION_PHRASES = [
-  'your legal name',
-  'legal name',
+// Phrases indicating Claude is transitioning from preliminary recommendation (Phase 2)
+// to identity/compliance collection (Phase 3).
+const PHASE3_TRANSITION_PHRASES = [
+  'verify your identity',
+  'verify some identity',
+  'identity details',
+  'identity information',
+  'for regulatory compliance',
   'for compliance',
-  'for regulatory',
-  'regulatory purposes',
-  'account setup',
-  'set up your account',
-  'complete your profile',
-  'personal details',
+  'last step',
   'officially set up',
+  'open your account',
   'formally',
   'compliance purposes',
-  'open your account',
+  'personal details',
+  'your legal name',
+  'legal name',
 ];
 
-function isPhase2Transition(assistantMessage: string): boolean {
+function isPhase3Transition(assistantMessage: string): boolean {
   const lower = assistantMessage.toLowerCase();
-  return PHASE2_TRANSITION_PHRASES.some((phrase) => lower.includes(phrase));
+  return PHASE3_TRANSITION_PHRASES.some((phrase) => lower.includes(phrase));
+}
+
+// Returns true when the 4 minimum suitability fields are present to generate
+// a preliminary recommendation. Triggers Phase 1 → Phase 2 transition.
+function hasSufficientSuitabilityForPreliminary(
+  kyc: KycRecord,
+  suit: SuitabilityAssessment
+): boolean {
+  const rp = suit.risk_profile;
+  const io = suit.investment_objectives;
+  const emp = kyc.employment_and_income;
+  return (
+    !!(rp?.stated_risk_tolerance || rp?.assessed_risk_tolerance) &&
+    !!(io?.time_horizon) &&
+    !!(emp?.annual_income_range) &&
+    !!(io?.primary_objective)
+  );
 }
 
 // ─── Guardrail Checks ─────────────────────────────────────────────────────────
@@ -610,9 +630,10 @@ function printSessionSummary(
   lines.push(' CONVERSATION METRICS');
   lines.push(` Mode:                  ${modeLabel}`);
   lines.push(` Total Turns:           ${totalTurns}`);
-  lines.push(` Phase 1 (Suitability): ${metrics.phase1Turns} turns`);
-  lines.push(` Phase 2 (Compliance):  ${metrics.phase2Turns} turns`);
-  lines.push(` Phase 3 (Recommend):   ${metrics.phase3Turns} turns`);
+  lines.push(` Phase 1 (Suitability):         ${metrics.phase1Turns} turns`);
+  lines.push(` Phase 2 (Prelim Rec):          ${metrics.phase2Turns} turns`);
+  lines.push(` Phase 3 (Identity/Compliance): ${metrics.phase3Turns} turns`);
+  lines.push(` Phase 4 (Final Confirm):       ${metrics.phase4Turns} turns`);
 
   lines.push('');
   lines.push(' MODEL QUALITY');
@@ -785,13 +806,22 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       console.log('[chat route] Handoff triggered — completion_status → handed_off');
     }
 
-    // Mark complete when the agent has delivered a recommendation and the user approves it.
-    // Condition: a full suitability_determination is present AND the user's message is affirmative.
+    // Compute required-field counts here so they're available for the completion
+    // check, the debug log, Phase 3→4 transition, and the turn summary below.
+    const { filled: filledRequired, pct: completionPct } = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
+
+    // Mark complete when the agent has delivered a final confirmed recommendation and
+    // the user approves it. All four conditions must hold:
+    //   1. Full suitability_determination present (hasFullRecommendation)
+    //   2. recommendation_status is "confirmed" (not just "preliminary")
+    //   3. All 20 required fields collected
+    //   4. currentPhase === 4 (prevents early completion on Phase 2 "yes")
     const sd = suitabilityAssessment.suitability_determination;
-    const hasRecommendation =
+    const hasFullRecommendation =
       !!sd?.recommended_portfolio_approach &&
       !!sd?.suitable_account_types &&
       sd.suitable_account_types.length > 0;
+    const recStatus = sd?.recommendation_status;
 
     const AFFIRMATIVES = [
       'yes', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay',
@@ -802,8 +832,24 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
     const msgLower = message.trim().toLowerCase();
     const isAffirmative = AFFIRMATIVES.some((w) => msgLower.includes(w));
 
+    const currentPhase = session._currentPhase;
     const wasInProgress = kycRecord.metadata.completion_status === 'in_progress';
-    if (hasRecommendation && isAffirmative && wasInProgress) {
+
+    console.log(
+      `[completion check] status=${kycRecord.metadata.completion_status}, ` +
+      `rec_status=${recStatus ?? 'none'}, ` +
+      `phase=${currentPhase}, ` +
+      `fields=${filledRequired}/20`
+    );
+
+    if (
+      hasFullRecommendation &&
+      recStatus === 'confirmed' &&
+      filledRequired === 20 &&
+      isAffirmative &&
+      wasInProgress &&
+      currentPhase === 4
+    ) {
       const conversationSummary = buildConversationSummary(kycRecord, suitabilityAssessment);
       kycRecord = {
         ...kycRecord,
@@ -813,7 +859,7 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
           conversation_summary: conversationSummary,
         },
       };
-      console.log('[chat route] Recommendation approved — completion_status → complete');
+      console.log('[chat route] Recommendation confirmed and approved — completion_status → complete');
     }
 
     if (extractionFound) {
@@ -825,7 +871,6 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
     }
 
     // Pretty-print the per-turn summary (delta fields, flags, completion %)
-    const { filled: filledRequired, pct: completionPct } = computeCompletionFromRequiredFields(kycRecord, suitabilityAssessment);
 
     // Compute true delta: only fields new or changed vs. what was logged in prior turns
     const previousFields = session.previousFields ?? new Map<string, string>();
@@ -844,7 +889,6 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
 
     // ── Session Metrics Update ──────────────────────────────────────────────
     const prevMetrics = session.sessionMetrics;
-    const currentPhase = session._currentPhase;
 
     // Build updated latencies and avg
     const updatedTurnLatencies = [...prevMetrics.turnLatencies, turnLatencyMs];
@@ -861,13 +905,19 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
     const phase1Turns = prevMetrics.phase1Turns + (currentPhase === 1 ? 1 : 0);
     const phase2Turns = prevMetrics.phase2Turns + (currentPhase === 2 ? 1 : 0);
     const phase3Turns = prevMetrics.phase3Turns + (currentPhase === 3 ? 1 : 0);
+    const phase4Turns = prevMetrics.phase4Turns + (currentPhase === 4 ? 1 : 0);
 
     // Determine next phase
-    let nextPhase: 1 | 2 | 3 = currentPhase;
-    if (currentPhase === 1 && isPhase2Transition(assistantMessage)) {
+    // Phase 1→2: backend-driven (suitability fields complete), Claude generates preliminary rec on next turn
+    // Phase 2→3: phrase-driven (Claude signals identity collection with transition language)
+    // Phase 3→4: backend-driven (all 20 fields complete and full recommendation exists)
+    let nextPhase: 1 | 2 | 3 | 4 = currentPhase;
+    if (currentPhase === 1 && hasSufficientSuitabilityForPreliminary(kycRecord, suitabilityAssessment)) {
       nextPhase = 2;
-    } else if (currentPhase <= 2 && hasRecommendation) {
+    } else if (currentPhase === 2 && isPhase3Transition(assistantMessage)) {
       nextPhase = 3;
+    } else if (currentPhase === 3 && hasFullRecommendation && filledRequired === 20) {
+      nextPhase = 4;
     }
 
     // Guardrail alerts — build on the updated fieldsPerTurn (including this turn's count)
@@ -897,6 +947,7 @@ router.post('/chat/:sessionId', async (req: Request, res: Response) => {
       phase1Turns,
       phase2Turns,
       phase3Turns,
+      phase4Turns,
       extractionSuccessCount: prevMetrics.extractionSuccessCount + (extractionFound ? 1 : 0),
       extractionRetryCount: prevMetrics.extractionRetryCount + (extractionRetryFired ? 1 : 0),
       enforceOneQuestionTrims: prevMetrics.enforceOneQuestionTrims + (oneQuestionTrimChars > 2 ? 1 : 0),

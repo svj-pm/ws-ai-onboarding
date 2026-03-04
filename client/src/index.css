@@ -633,6 +633,27 @@ body {
   border-radius: 10px;
 }
 
+.rec-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.rec-status-preliminary {
+  color: #f5a623;
+  background: rgba(245, 166, 35, 0.12);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+}
+
+.rec-status-confirmed {
+  color: #00d478;
+  background: rgba(0, 212, 120, 0.1);
+  border: 1px solid rgba(0, 212, 120, 0.25);
+}
+
 .rec-accounts {
   display: flex;
   gap: 6px;

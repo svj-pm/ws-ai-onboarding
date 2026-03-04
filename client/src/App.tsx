@@ -24,6 +24,7 @@ const EMPTY_METRICS: SessionMetrics = {
   phase1Turns: 0,
   phase2Turns: 0,
   phase3Turns: 0,
+  phase4Turns: 0,
   extractionSuccessCount: 0,
   extractionRetryCount: 0,
   enforceOneQuestionTrims: 0,
